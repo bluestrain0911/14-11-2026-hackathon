@@ -166,59 +166,48 @@ function loadData(d) {
 let moods = [], intensity = [], storm = [];
 
 function analyse() {
-  // --- 情緒：用「狀態機」判斷，避免被一兩分鐘的小跳動騙到 ---
-  // 1. 先把價格「平滑」：每一步只往新價格靠近 30%，濾掉雜訊
-  const smooth = [];
-  prices.forEach((p, i) => smooth.push(i === 0 ? p : smooth[i - 1] + 0.3 * (p - smooth[i - 1])));
+  // --- 情緒：看「最近 12 步」是不是一路往同一個方向走 ---
+  // 「方向一致度」= 淨漲跌 ÷ 這段路上所有上下跳動加起來的總距離
+  //   一路穩穩往下走 → 接近 -1；一路往上 → 接近 +1；上上下下原地打轉 → 接近 0
+  // 這樣「慢慢但持續地下跌」也能很快被抓到，不會被當成平穩。
+  const W = 12;
+  const netMoves = prices.map((p, i) => Math.abs(p - prices[Math.max(0, i - W)])).sort((a, b) => a - b);
+  const BAND = netMoves[Math.floor(netMoves.length / 2)] || 1e-9;  // 12 步之間「一般」會走多遠
+  const ENTER = 0.35;   // 一致度超過這個值，才算開始漲/跌
+  const LEAVE = 0.15;   // 漲/跌中，一致度掉到這個值以下，才算結束（兩個門檻不同，避免一直來回切換）
+  const CONFIRM = 3;    // 新的情緒要連續出現 3 步才切換（大暴衝例外，立刻切換）
 
-  // 2. 「一小段」有多大：這段資料裡，15 步之間的價差的中位數
-  const moves = smooth.map((p, i) => Math.abs(p - smooth[Math.max(0, i - 15)])).sort((a, b) => a - b);
-  const BAND = moves[Math.floor(moves.length / 2)] || 1e-9;
-  const CONFIRM = 4;    // 要連續超出範圍 4 步，才算真的在漲或跌（不是一下下的跳動）
-  const STALL = 15;     // 連續 15 步沒有明顯創新高（或新低），就回到「平穩」
-
-  // 3. 一步一步判斷
-  //   平穩：價格在一個區間（中心 ± BAND）裡晃。往上衝出區間並維持 CONFIRM 步 → 天堂；往下 → 恐怖
-  //   天堂：一直記錄最高點。從最高點跌超過 BAND 並維持 CONFIRM 步 → 恐怖；
-  //         很久沒創新高、但也沒大跌 → 平穩
-  //   恐怖：反過來，記錄最低點
   moods = []; intensity = [];
-  let state = 'calm', center = smooth[0], extreme = smooth[0], start = smooth[0], startIndex = 0;
-  let outside = 0, against = 0, stall = 0, mark = smooth[0];
+  let state = 'calm', pending = 0, startIndex = 0;
 
-  smooth.forEach((p, i) => {
-    if (state === 'calm') {
-      if (p > center + BAND) outside = Math.max(0, outside) + 1;
-      else if (p < center - BAND) outside = Math.min(0, outside) - 1;
-      else { outside = 0; center += 0.1 * (p - center); }   // 在區間裡：中心慢慢跟著移動
-      if (Math.abs(outside) >= CONFIRM) {
-        state = outside > 0 ? 'heaven' : 'horror';
-        start = center; extreme = mark = p; startIndex = i; against = 0; stall = 0; outside = 0;
-      }
-    } else {
-      const up = state === 'heaven';
-      // 創新高（或新低）要「明顯」超過上一次的紀錄才算，只多一點點的雜訊不算
-      if (up ? p > extreme : p < extreme) extreme = p;
-      const clearRecord = up ? extreme > mark + 0.3 * BAND : extreme < mark - 0.3 * BAND;
-      if (clearRecord) { mark = extreme; stall = 0; } else stall++;
-      const pulledBack = up ? p < extreme - BAND : p > extreme + BAND;
-      against = pulledBack ? against + 1 : 0;
+  prices.forEach((p, i) => {
+    const from = Math.max(0, i - W);
+    const net = p - prices[from];
+    let path = 0;
+    for (let k = from + 1; k <= i; k++) path += Math.abs(prices[k] - prices[k - 1]);
+    const consistency = path ? net / path : 0;
 
-      if (against >= CONFIRM) {                // 反轉了：天堂 ↔ 恐怖
-        state = up ? 'horror' : 'heaven';
-        start = extreme; extreme = mark = p; startIndex = i; against = 0; stall = 0;
-      } else if (stall >= STALL) {             // 停在原地很久：回到平穩
-        state = 'calm'; center = p; outside = 0;
+    // 這一步「想要」變成什麼情緒
+    let want = 'calm';
+    if (consistency > ENTER && net > 0.5 * BAND) want = 'heaven';
+    else if (consistency < -ENTER && -net > 0.5 * BAND) want = 'horror';
+    else if (state === 'heaven' && consistency > LEAVE) want = 'heaven';   // 還在漲，維持
+    else if (state === 'horror' && consistency < -LEAVE) want = 'horror';  // 還在跌，維持
+
+    // 要連續好幾步都想換，才真的換；如果是很大的暴衝（超過一般的 2 倍），立刻換
+    if (want !== state) {
+      pending++;
+      if (pending >= CONFIRM || Math.abs(net) > 2 * BAND) {
+        state = want; pending = 0; startIndex = i;
       }
-    }
+    } else pending = 0;
 
     moods.push(state);
     if (state === 'calm') intensity.push(0);
     else {
-      const distance = Math.min(1, Math.abs(extreme - start) / (3 * BAND));  // 已經漲/跌了多少
-      const duration = Math.min(1, (i - startIndex) / 60);                    // 已經持續多久
-      const fading = 1 - 0.5 * stall / STALL;     // 一陣子沒有再創新高/新低，音效就慢慢變淡
-      intensity.push((0.6 * distance + 0.4 * duration) * fading);
+      const distance = Math.min(1, Math.abs(net) / (3 * BAND));      // 漲/跌了多少
+      const duration = Math.min(1, (i - startIndex) / 40);            // 持續多久
+      intensity.push(0.6 * distance + 0.4 * duration);
     }
   });
 
