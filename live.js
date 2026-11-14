@@ -31,6 +31,25 @@ let swellTimer = null;
 let heartbeatTimer = null;
 const bgMode = () => document.getElementById('bgMode').value;
 
+// =====================================================================
+// 安靜模式：平穩超過一段時間 → 音樂和播報都停；等到有明顯的漲跌、風暴或暴衝才恢復
+// =====================================================================
+let liveQuiet = false;       // 現在是不是「安靜中」
+let calmStreak = 0;          // 已經連續平穩幾分鐘（市場時間）
+let quietAnchor = 0;         // 開始安靜時的價格水準
+let normalMove = 1e-9;       // 「一般」10 分鐘會走多遠（用歷史資料算）
+const quietAfter = () => Number(document.getElementById('quietAfter').value);   // 0 = 關閉
+
+function goQuiet() {
+  liveQuiet = true;
+  musicBus.gain.rampTo(0, 3);                      // 音樂慢慢淡出
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+}
+function wakeUp() {
+  liveQuiet = false;
+  applyBackgroundMode();                           // 音樂恢復（依照目前的背景模式）
+}
+
 // 短提示音：上漲 = 往上的三個音；下跌 = 往下的低音；回到平靜 = 一聲輕輕的叮
 const cue = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'triangle' },
   envelope: { attack: 0.005, decay: 0.4, sustain: 0, release: 0.4 } }).toDestination();
@@ -158,6 +177,12 @@ async function startLive() {
     ' to ' + times[times.length - 1] + ' (last 10%).';
   liveActive = true;
   outage = false; stale = false;
+  liveQuiet = false; calmStreak = 0;
+  // 一般 10 分鐘會走多遠：用 90% 的歷史資料算中位數
+  const moves = [];
+  for (let k = Math.max(10, liveFrom - 5000); k < liveFrom; k++) moves.push(Math.abs(prices[k] - prices[k - 10]));
+  moves.sort((a, b) => a - b);
+  normalMove = moves[Math.floor(moves.length / 2)] || 1e-9;
   nextStepAt = performance.now() + liveInterval();
   lastDataAt = performance.now();
   document.getElementById('outageBtn').textContent = '🔌 Simulate feed outage';
@@ -212,13 +237,31 @@ function liveStep(i) {
   // 瀏覽器分頁標題：切到別的分頁也看得到狀況
   const label = { heaven: 'Rising', horror: 'Falling', calm: 'Calm' }[moodAt(i)];
   const warn = warnLevel[i] || 0;
-  document.title = (warn === 2 ? '🔴 STORM · ' : warn === 1 ? '🟡 ' : '🎵 ') + 'EUR/USD ' + prices[i].toFixed(5) + ' · ' + label;
+  document.title = (liveQuiet ? '😴 ' : warn === 2 ? '🔴 STORM · ' : warn === 1 ? '🟡 ' : '🎵 ') + 'EUR/USD ' + prices[i].toFixed(5) + ' · ' + label;
+
+  // 安靜模式：
+  //   「平穩」= 最近 N 分鐘的價格都擠在一個小範圍裡（不超過一般 10 分鐘波動的 1.5 倍），而且沒有警報、沒有暴衝
+  //   「大幅度」= 價格離開安靜時的水準超過一般 10 分鐘波動的 2 倍，或出現風暴警報、暴衝
+  const N = quietAfter();
+  const wasQuiet = liveQuiet;
+  if (N && !liveQuiet && i - N >= 0) {
+    const recent = prices.slice(i - N + 1, i + 1);
+    const tight = Math.max(...recent) - Math.min(...recent) <= 1.5 * normalMove;
+    if (tight && !(warnLevel[i] || 0) && !spikes[i]) {
+      quietAnchor = recent.reduce((a, b) => a + b, 0) / recent.length;
+      goQuiet();
+    }
+  } else if (liveQuiet) {
+    const bigMove = Math.abs(prices[i] - quietAnchor) > 2 * normalMove;
+    if (bigMove || (warnLevel[i] || 0) > 0 || spikes[i]) wakeUp();   // 有明顯的動靜了：醒來
+  }
 
   // 播報：情緒改變、風暴預警
   const facts = { time: times[i], price: prices[i].toFixed(5), volatilityTimesNormal: (stormRatio[i] || 1).toFixed(1) };
-  if (warn > liveLastWarn) { narrate('stormWarning', facts, warn === 2); somethingHappened(null); }   // 警報聲本來就會響
-  else if (moodAt(i) !== liveLastMood) { narrate(moodAt(i), facts, false); somethingHappened(moodAt(i)); }
-  if (spikes[i]) { somethingHappened(null); if (Math.abs(spikes[i]) > 25 * spikeScale) narrate('spike', facts, true); }
+  if (liveQuiet) { /* 安靜中：不播報 */ }
+  else if (warn > liveLastWarn) { narrate('stormWarning', facts, warn === 2); somethingHappened(null); }   // 警報聲本來就會響
+  else if (moodAt(i) !== liveLastMood || wasQuiet) { narrate(moodAt(i), facts, wasQuiet); somethingHappened(moodAt(i)); }
+  if (spikes[i] && !liveQuiet) { somethingHappened(null); if (Math.abs(spikes[i]) > 25 * spikeScale) narrate('spike', facts, true); }
   liveLastWarn = warn;
   liveLastMood = moodAt(i);
 }
@@ -251,7 +294,8 @@ function checkFeed() {
     let calmFor = 0;
     for (let k = i; k >= liveFrom && moodAt(k) === 'calm' && !warnLevel[k]; k--) calmFor++;
     const warn = warnLevel[i] || 0;
-    const summary = warn === 2 ? '<b style="color:#ff4d4f">🔴 Storm — prices are moving violently</b>'
+    const summary = liveQuiet ? '<b style="color:#cfd6e4">😴 Quiet market — music and voice paused until a big move</b>'
+      : warn === 2 ? '<b style="color:#ff4d4f">🔴 Storm — prices are moving violently</b>'
       : warn === 1 ? '<b style="color:#faad14">🟡 Getting choppy — volatility is rising</b>'
       : moodAt(i) === 'heaven' ? '<b style="color:#f5c542">📈 Rising</b>'
       : moodAt(i) === 'horror' ? '<b style="color:#ff6b6b">📉 Falling</b>'

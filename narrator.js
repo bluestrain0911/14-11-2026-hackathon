@@ -132,6 +132,8 @@ async function narrate(event, facts, force) {
   lastSpoken = now;
   speaking = true;
 
+  // Live monitor 的安靜模式：不說話
+  if (proMode() && typeof liveQuiet !== 'undefined' && liveQuiet) { speaking = false; return; }
   // Live monitor：用專業的提示語，不用 Gemini 搞笑（提示要穩定、可預期）
   if (proMode()) {
     const make = PRO_LINES[event];
