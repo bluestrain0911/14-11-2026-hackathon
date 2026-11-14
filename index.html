@@ -69,8 +69,9 @@
   .tabs button.active { background: var(--signal); color: #fff; }
 
   /* 圖表卡片：頂部是報價列 */
-  .chart-wrap { position: relative; width: 100%; min-width: 0; }
-  .chart-wrap canvas { display: block; max-width: 100%; }
+  .chart-wrap { position: relative; width: 100%; min-width: 0; aspect-ratio: 2 / 1; max-height: 70vh; }
+  body.mode-survive .chart-wrap { aspect-ratio: 3.6 / 1; max-height: 42vh; }
+  .chart-wrap canvas { display: block; position: absolute; inset: 0; width: 100% !important; height: 100% !important; }
   .chart-box { min-width: 0; position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 18px 18px 12px; }
   .quote { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap;
            padding-bottom: 14px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
@@ -714,7 +715,9 @@ const chart = new Chart(document.getElementById('chart'), {
       segment: { borderColor: ctx => lineColor(ctx.p0DataIndex) } },
     { data: [], borderColor: '#ff7a45', backgroundColor: '#ff7a45', pointRadius: 6, showLine: false }
   ]},
-  options: { animation: false, plugins: { legend: { display: false } },
+  // 圖表的高度由外框的 CSS（aspect-ratio）決定，不用 Chart.js 自己算的比例：
+  // Chart.js 自己算比例時，視窗從小變大後會卡在舊的大小（它會被舊的高度限制住）
+  options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
     scales: { x: { display: false }, y: { ticks: { color: '#8e9bb5', font: { family: 'Manrope' } }, grid: { color: '#1f2b47' } } } }
 });
 
@@ -1366,7 +1369,7 @@ function showMode(mode) {
   hideAnswer = false;
   document.body.style.background = '#0d1424';
   document.body.classList.toggle('mode-survive', mode === 'survive');   // 生存模式：走勢圖為主、交易員在旁邊
-  if (chart.options) { chart.options.aspectRatio = mode === 'survive' ? 3.6 : 2; chart.resize && chart.resize(); }  // 生存模式的圖矮一點，按鈕不會被擠出畫面
+  setTimeout(() => { try { chart.resize(); } catch (e) {} }, 0);   // 生存模式的圖比較矮（由 CSS 決定），換模式後重新量一次
 
   if (mode === 'game') {
     round = 0; score = 0; answer = null;
