@@ -11,72 +11,146 @@
 <!-- SGX FX 的真實資料（和 index.html 放在同一個資料夾） -->
 <script src="data.js"></script>
 
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  /* ===== 外觀設定：只影響長相 ===== */
-  body { font-family: system-ui, sans-serif; background: #0f1115; transition: background 1.5s; color: #e8e8e8;
-         max-width: 900px; margin: 0 auto; padding: 24px; }
-  h1 { font-weight: 600; margin-bottom: 4px; }
-  .subtitle { color: #9aa0a6; margin-top: 0; }
-  .chart-box { background: #171a21; border-radius: 12px; padding: 12px; }
-  .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 16px 0; }
-  button { background: #2b6cff; color: white; border: none; border-radius: 8px;
-           padding: 10px 18px; font-size: 16px; cursor: pointer; }
-  button:disabled { background: #444; cursor: default; }
-  .info { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
-  select { font-size: 15px; padding: 8px; border-radius: 8px; background: #171a21; color: #e8e8e8; border: 1px solid #333; }
-  .card { background: #171a21; border-radius: 10px; padding: 10px 12px; color: #9aa0a6; font-size: 13px; }
-  .card b { display: block; color: #e8e8e8; font-size: 20px; margin-top: 4px; }
-  .meter { height: 10px; background: #2a2e36; border-radius: 5px; overflow: hidden; margin-top: 16px; }
+  /* ===== 外觀設定：只影響長相，不影響功能 ===== */
+  :root {
+    --ink: #0d1424;        /* 頁面背景：深藍墨色 */
+    --panel: #141e33;      /* 卡片 */
+    --raised: #1b2742;     /* 按鈕、輸入框 */
+    --line: #26355a;       /* 邊線 */
+    --text: #eaf0fa;
+    --muted: #8e9bb5;
+    --signal: #5b8cff;     /* 主要按鈕 */
+    --up: #f5c542;         /* 上漲（天堂） */
+    --down: #ff5a5f;       /* 下跌（恐怖） */
+  }
+  * { box-sizing: border-box; }
+  body { font-family: 'Manrope', system-ui, sans-serif; background: var(--ink); color: var(--text);
+         transition: background 1.5s; max-width: 1040px; margin: 0 auto; padding: 20px 24px 48px;
+         font-size: 15px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  b, .price, .stat b { font-variant-numeric: tabular-nums; }
+
+  /* 頂部：品牌 + 模式切換 */
+  .appbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 12px; }
+  .brand .name { font-weight: 800; font-size: 20px; letter-spacing: -0.01em; }
+  .brand .tag { color: var(--muted); font-size: 13px; }
+  .eq { display: flex; align-items: flex-end; gap: 3px; height: 26px; padding: 6px; border-radius: 10px; background: var(--raised); }
+  .eq i { width: 4px; height: 6px; border-radius: 2px; background: var(--up); transition: height 0.3s; }
+  .eq i:nth-child(2) { height: 12px; } .eq i:nth-child(3) { height: 9px; background: var(--down); }
+  .eq i:nth-child(4) { height: 14px; } .eq i:nth-child(5) { height: 7px; }
+  body.playing .eq i { animation: bounce 0.9s ease-in-out infinite; }
+  body.playing .eq i:nth-child(2) { animation-delay: -0.2s; } body.playing .eq i:nth-child(3) { animation-delay: -0.5s; }
+  body.playing .eq i:nth-child(4) { animation-delay: -0.1s; } body.playing .eq i:nth-child(5) { animation-delay: -0.7s; }
+  @keyframes bounce { 0%, 100% { height: 4px; } 50% { height: 14px; } }
+  @media (prefers-reduced-motion: reduce) { body.playing .eq i { animation: none; } }
+  .lede { color: var(--muted); margin: 14px 0 18px; max-width: 62ch; }
+
+  .tabs { display: flex; gap: 4px; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+  .tabs button { background: transparent; color: var(--muted); padding: 8px 14px; font-size: 14px; font-weight: 600; border-radius: 9px; }
+  .tabs button:hover { color: var(--text); background: var(--raised); }
+  .tabs button.active { background: var(--signal); color: #fff; }
+
+  /* 圖表卡片：頂部是報價列 */
+  .chart-box { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 18px 18px 12px; }
+  .quote { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+           padding-bottom: 14px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
+  .quote-main { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .pair { font-weight: 700; color: var(--muted); font-size: 15px; }
+  .price { font-size: 38px; font-weight: 800; letter-spacing: -0.02em; line-height: 1; }
+  .time { color: var(--muted); font-size: 14px; }
+  .quote-side { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .mood { font-weight: 800; font-size: 15px; padding: 6px 12px; border-radius: 999px; border: 1.5px solid currentColor; }
+  .stat { color: var(--muted); font-size: 13px; }
+  .stat b { color: var(--text); font-weight: 700; margin-left: 4px; }
+  .meter { width: 120px; height: 6px; background: var(--raised); border-radius: 3px; overflow: hidden; }
   .meter div { height: 100%; width: 0%; background: #3ecf8e; transition: width 0.2s, background 0.2s; }
-  .tabs { display: flex; gap: 8px; margin: 12px 0; }
-  .tabs button { background: #262a33; }
-  .tabs button.active { background: #2b6cff; }
-  .chart-box { position: relative; }
-  .cover { position: absolute; inset: 0; border-radius: 12px; background: #171a21;
-           display: flex; flex-direction: column; align-items: center; justify-content: center;
-           text-align: center; font-size: 22px; color: #e8e8e8; }
-  .cover small { color: #9aa0a6; font-size: 14px; margin-top: 8px; }
-  .game { background: #171a21; border-radius: 12px; padding: 16px; margin: 16px 0; }
+
+  /* 按鈕、選單 */
+  button { font-family: inherit; background: var(--signal); color: #fff; border: none; border-radius: 10px;
+           padding: 10px 16px; font-size: 15px; font-weight: 600; cursor: pointer; transition: filter 0.15s, transform 0.05s; }
+  button:hover { filter: brightness(1.1); }
+  button:active { transform: translateY(1px); }
+  button:disabled { background: var(--raised) !important; color: var(--muted); cursor: default; filter: none; }
+  button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+  select, input[type="time"], input[type="password"], input:not([type]) {
+    font-family: inherit; font-size: 14px; padding: 8px 10px; border-radius: 10px;
+    background: var(--raised); color: var(--text); border: 1px solid var(--line); }
+  input[type="checkbox"] { accent-color: var(--signal); }
+  input[type="range"] { accent-color: var(--signal); vertical-align: middle; }
+  label { color: var(--muted); font-size: 14px; }
+
+  /* 次要按鈕：低調一點，讓主要按鈕（Play、Start）最顯眼 */
+  #stopBtn, #restartBtn, #liveStopBtn, #outageBtn, #pauseBtn, #statusBtn, #resetBlind, #testNarrator, #replayRoundBtn {
+    background: var(--raised) !important; color: var(--text); border: 1px solid var(--line); }
+  input[type="file"] { color: var(--muted); font-family: inherit; font-size: 13px; }
+  input[type="file"]::file-selector-button { font-family: inherit; background: var(--raised); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; margin-right: 8px; cursor: pointer; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 14px 0; }
+  .info { display: grid; gap: 10px; }
+  .card { background: var(--raised); border-radius: 12px; padding: 10px 12px; color: var(--muted); font-size: 13px; }
+  .card b { display: block; color: var(--text); font-size: 19px; font-weight: 700; margin-top: 2px; }
+
+  /* 各模式的面板 */
+  .game { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 18px; margin: 16px 0; }
   .game .answers { display: flex; gap: 10px; margin: 12px 0; flex-wrap: wrap; }
-  .game .answers button { font-size: 18px; padding: 12px 20px; }
-  #answerUp { background: #b8901c; } #answerFlat { background: #4a5263; } #answerDown { background: #b3262a; }
-  .feedback { font-size: 18px; min-height: 26px; }
-  .hidden { display: none !important; }
-  .spike { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); padding: 8px 16px;
-           border-radius: 10px; font-size: 22px; font-weight: 700; opacity: 0; transition: opacity 0.6s; pointer-events: none; }
+  .game .answers button { font-size: 16px; padding: 12px 18px; }
+  #answerUp { background: #b8901c; } #answerFlat { background: #3d4a66; } #answerDown { background: #c4363b; }
+  .feedback { font-size: 16px; min-height: 24px; }
+  details summary { cursor: pointer; font-weight: 700; }
+
+  .cover { position: absolute; inset: 0; border-radius: 18px; background: var(--panel);
+           display: flex; flex-direction: column; align-items: center; justify-content: center;
+           text-align: center; font-size: 24px; font-weight: 800; color: var(--text); }
+  .cover small { color: var(--muted); font-size: 15px; font-weight: 500; margin-top: 8px; }
+
+  .spike { position: absolute; top: 90px; left: 50%; transform: translateX(-50%); padding: 8px 16px;
+           border-radius: 10px; font-size: 20px; font-weight: 800; opacity: 0; transition: opacity 0.6s; pointer-events: none; }
   .spike.show { opacity: 1; transition: none; }
+
+  /* 底部：聽音指南 */
+  .legend { margin-top: 20px; padding: 14px 18px; border: 1px dashed var(--line); border-radius: 14px; color: var(--muted); }
+  .legend-items { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; font-size: 14px; color: var(--text); }
+  .legend-note { font-size: 12px; margin-top: 8px; }
+
+  .hidden { display: none !important; }
+
+  @media (max-width: 640px) {
+    body { padding: 14px; }
+    .price { font-size: 30px; }
+    .tabs { width: 100%; overflow-x: auto; }
+    .tabs button { white-space: nowrap; }
+  }
 </style>
 </head>
 
 <body>
-  <h1>Market Symphony</h1>
-  <p class="subtitle">Hear the market: rising prices sound like heaven, falling prices sound like a horror film</p>
 
-  <details open class="game" style="margin:12px 0; padding:10px 16px;">
-    <summary style="cursor:pointer; font-weight:600;">🎧 How to listen</summary>
-    <div style="display:flex; flex-wrap:wrap; gap:6px 18px; margin-top:8px; font-size:14px;">
-      <span><b style="color:#f5c542">😇 Heaven</b> = rising</span>
-      <span><b style="color:#cfd6e4">😌 Calm</b> = flat</span>
-      <span><b style="color:#ff6b6b">👻 Horror</b> = falling</span>
-      <span>🥁 Faster = more volatile</span>
-      <span>⚡ Ding = spike up</span>
-      <span>💥 Boom = crash</span>
-      <span>🔁 Beep-beep = quick reversal</span>
-      <span><span style="color:#52c41a">■</span> Green = jumpy rise</span>
-      <span><span style="color:#eb2f96">■</span> Pink = jumpy fall</span>
+  <header class="appbar">
+    <div class="brand">
+      <span class="eq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+      <div>
+        <div class="name">Market Symphony</div>
+        <div class="tag">Hear the euro move</div>
+      </div>
     </div>
-    <div style="font-size:12px; color:#9aa0a6; margin-top:6px;">
-      Music shows the market (EUR vs USD), not your profit · Data: SGX FX EUR/USD, 1-minute
-      · <label><input id="gentleMode" type="checkbox"> Gentle mode (no jump scares)</label>
-    </div>
-  </details>
+    <nav class="tabs" aria-label="Modes">
+      <button id="replayTab" class="active">Replay</button>
+      <button id="gameTab">Guess game</button>
+      <button id="surviveTab">Survive the storm</button>
+      <button id="liveTab">Live monitor</button>
+    </nav>
+  </header>
+  <p class="lede">Rising prices sound like heaven, falling prices like a horror film. Close your eyes and you can still follow EUR/USD.</p>
 
-  <div class="tabs">
-    <button id="replayTab" class="active">Replay</button>
-    <button id="gameTab">Guess game</button>
-    <button id="surviveTab">Survive the storm</button>
-    <button id="liveTab">Live monitor</button>
-  </div>
+
+
+
+
+
 
   <!-- 生存模式：交易員小遊戲 -->
   <div id="survivePanel" class="game hidden">
@@ -126,6 +200,19 @@
   </div>
 
   <div class="chart-box">
+    <div class="quote" id="infoCards">
+      <div class="quote-main">
+        <span class="pair">EUR/USD</span>
+        <b id="priceText" class="price">–</b>
+        <span id="timeText" class="time">–</span>
+      </div>
+      <div class="quote-side">
+        <span class="mood" id="keyText">–</span>
+        <span class="stat">Tempo <b id="bpmText">–</b></span>
+        <span class="stat">Volatility <b id="stormText">–</b></span>
+        <div class="meter"><div id="meterBar"></div></div>
+      </div>
+    </div>
     <canvas id="chart" height="120"></canvas>
     <!-- 暴衝時閃一下的提示 -->
     <div id="spikeFlash" class="spike"></div>
@@ -208,14 +295,24 @@
     <label>Load CSV <input id="fileInput" type="file" accept=".csv"></label>
   </div>
 
-  <div class="info" id="infoCards">
-    <div class="card">Time<b id="timeText">-</b></div>
-    <div class="card">Price<b id="priceText">-</b></div>
-    <div class="card">Mood<b id="keyText">-</b></div>
-    <div class="card">Tempo<b id="bpmText">-</b></div>
-    <div class="card">Storm<b id="stormText">-</b></div>
-  </div>
-  <div class="meter"><div id="meterBar"></div></div>
+  <details open class="legend">
+    <summary>🎧 How to listen</summary>
+    <div class="legend-items">
+      <span><b style="color:#f5c542">😇 Heaven</b> = rising</span>
+      <span><b style="color:#cfd6e4">😌 Calm</b> = flat</span>
+      <span><b style="color:#ff6b6b">👻 Horror</b> = falling</span>
+      <span>🥁 Faster = more volatile</span>
+      <span>⚡ Ding = spike up</span>
+      <span>💥 Boom = crash</span>
+      <span>🔁 Beep-beep = quick reversal</span>
+      <span><span style="color:#52c41a">■</span> Green = jumpy rise</span>
+      <span><span style="color:#eb2f96">■</span> Pink = jumpy fall</span>
+    </div>
+    <div class="legend-note">
+      Music shows the market (EUR vs USD), not your profit · Data: SGX FX EUR/USD, 1-minute
+      · <label><input id="gentleMode" type="checkbox"> Gentle mode (no jump scares)</label>
+    </div>
+  </details>
 
 <script>
 // =====================================================================
@@ -503,7 +600,7 @@ const chart = new Chart(document.getElementById('chart'), {
     { data: [], borderColor: '#ff7a45', backgroundColor: '#ff7a45', pointRadius: 6, showLine: false }
   ]},
   options: { animation: false, plugins: { legend: { display: false } },
-    scales: { x: { display: false }, y: { ticks: { color: '#9aa0a6' }, grid: { color: '#2a2e36' } } } }
+    scales: { x: { display: false }, y: { ticks: { color: '#8e9bb5', font: { family: 'Manrope' } }, grid: { color: '#1f2b47' } } } }
 });
 
 // 圖表的上下範圍至少要有 10 pip（0.0010）。
@@ -752,9 +849,9 @@ function onTick(time) {
 }
 
 const MOOD_STYLE = {
-  heaven: { label: 'Heaven', color: '#f5c542', background: '#1c1a10' },
-  horror: { label: 'Horror', color: '#ff4d4f', background: '#1c0d10' },
-  calm:   { label: 'Calm',   color: '#3ecf8e', background: '#0f1115' }
+  heaven: { label: '😇 Heaven', color: '#f5c542', background: '#17182a' },
+  horror: { label: '👻 Horror', color: '#ff5a5f', background: '#1a1222' },
+  calm:   { label: '😌 Calm',   color: '#8fd3b5', background: '#0d1424' }
 };
 
 // 圖表左下角的風暴預警（回放和生存模式都會顯示）
@@ -817,6 +914,7 @@ async function play() {
   Tone.Transport.bpm.value = 76;
   loopId = Tone.Transport.scheduleRepeat(onTick, '16n');
   Tone.Transport.start();
+  document.body.classList.add('playing');            // 讓左上角的等化器動起來
   document.getElementById('playBtn').disabled = true;
   document.getElementById('stopBtn').disabled = false;
 }
@@ -825,6 +923,7 @@ function stop() {
   Tone.Transport.stop();
   if (loopId !== null) { Tone.Transport.clear(loopId); loopId = null; }
   pad.releaseAll(); drone.releaseAll(); eerie.triggerRelease();   // 把還在響的長音關掉
+  document.body.classList.remove('playing');
   document.getElementById('playBtn').disabled = false;
   document.getElementById('stopBtn').disabled = true;
 }
@@ -947,7 +1046,7 @@ function startRound() {
   hideAnswer = true;
   step = 0;
   drawChart();
-  document.body.style.background = '#0f1115';
+  document.body.style.background = '#0d1424';
   document.getElementById('cover').classList.remove('hidden');
   document.getElementById('feedback').textContent = 'Listen, then choose an answer.';
   document.getElementById('startRoundBtn').classList.add('hidden');
@@ -1006,7 +1105,7 @@ function showMode(mode) {
   document.querySelector('.meter').classList.toggle('hidden', mode !== 'replay' && mode !== 'live');
   document.getElementById('cover').classList.add('hidden');
   hideAnswer = false;
-  document.body.style.background = '#0f1115';
+  document.body.style.background = '#0d1424';
 
   if (mode === 'game') {
     round = 0; score = 0; answer = null;
