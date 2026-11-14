@@ -129,7 +129,7 @@ async function narrate(event, facts, force) {
   if (!document.getElementById('narratorOn').checked) return;
   const now = Date.now();
   if (!force && (speaking || now - lastSpoken < 3500)) return;   // 至少間隔 3.5 秒，像球評一樣講不停
-  if (force && 'speechSynthesis' in window) speechSynthesis.cancel(); // 重要時刻直接插話
+  // 重要時刻直接插話（由 speakLine 負責打斷前一句）
   lastSpoken = now;
   speaking = true;
 
@@ -149,20 +149,39 @@ async function narrate(event, facts, force) {
     if (setting('geminiKey')) line = await askGemini(event, facts) || line;
   } catch (e) { console.warn('Gemini failed, using built-in line', e); }
 
-  await speakLine(line, event);
+  // 終場的評論和賽後報告排隊講，不互相打斷
+  await speakLine(line, event, ['end', 'endLoss', 'newBest'].includes(event));
   speaking = false;
 }
 
-// 直接唸出一句指定的話（賽後報告會用到）
-async function speakLine(line, event) {
-  document.getElementById('narratorText').textContent = '🎙 ' + line;
-  try {
-    if (setting('elevenKey')) await speakEleven(line, event);
-    else await speakBrowser(line, event);
-  } catch (e) {
-    console.warn('ElevenLabs failed, using browser voice', e);
-    await speakBrowser(line, event);
-  }
+// 直接唸出一句指定的話
+// 同一時間只會有一個人聲：
+//   一般（interrupt）：新的一句會打斷正在講的那句，並取消還沒講的
+//   排隊（queue = true）：等前面講完再講，例如賽後報告接在終場評論後面
+let speechToken = 0;        // 每次「打斷」就加 1，舊的那句看到號碼變了就不講
+let currentAudio = null;    // 正在播放的 ElevenLabs 聲音
+let speechChain = Promise.resolve();
+function stopSpeech() {
+  speechToken++;
+  if (currentAudio) { currentAudio.pause(); if (currentAudio.onended) currentAudio.onended(); currentAudio = null; }
+  if ('speechSynthesis' in window) speechSynthesis.cancel();
+}
+function speakLine(line, event, queue) {
+  if (!queue) stopSpeech();
+  const run = async () => {
+    const my = speechToken;
+    document.getElementById('narratorText').textContent = '🎙 ' + line;
+    try {
+      if (setting('elevenKey')) await speakEleven(line, event, my);
+      else await speakBrowser(line, event);
+    } catch (e) {
+      if (my !== speechToken) return;      // 已經被打斷了，不用補講
+      console.warn('ElevenLabs failed, using browser voice', e);
+      await speakBrowser(line, event);
+    }
+  };
+  speechChain = queue ? speechChain.then(run, run) : run();
+  return speechChain;
 }
 
 function pickLine(event) {
@@ -214,7 +233,7 @@ async function findFreeVoice() {
   return pick;
 }
 
-async function speakEleven(line, event) {
+async function speakEleven(line, event, my = speechToken) {
   const voice = setting('elevenVoice') || 'JBFqnCBsd6RMkjVDRZzb';
   const response = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + voice, {
     method: 'POST',
@@ -231,7 +250,7 @@ async function speakEleven(line, event) {
       saveSetting('elevenVoice', pick.voice_id);
       document.getElementById('elevenVoice').value = pick.voice_id;
       document.getElementById('narratorText').textContent = '🔁 Switched ElevenLabs voice to ' + pick.name + ' (free-plan voice)';
-      return speakEleven(line, event);
+      return speakEleven(line, event, my);
     }
   }
   if (!response.ok) {
@@ -242,9 +261,14 @@ async function speakEleven(line, event) {
     document.getElementById('narratorText').textContent = '⚠️ ' + msg + ' (using browser voice instead)';
     throw new Error(msg);
   }
-  const audio = new Audio(URL.createObjectURL(await response.blob()));
+  const blob = await response.blob();
+  if (my !== speechToken) return;          // 下載期間已經有新的一句了：這句不播，避免兩個人聲疊在一起
+  const audio = new Audio(URL.createObjectURL(blob));
+  currentAudio = audio;
+  const done = new Promise(resolve => { audio.onended = resolve; audio.onerror = resolve; });
   await audio.play();
-  await new Promise(resolve => { audio.onended = resolve; });
+  await done;
+  if (currentAudio === audio) currentAudio = null;
 }
 
 // ---------- 備案：瀏覽器內建語音（免費） ----------

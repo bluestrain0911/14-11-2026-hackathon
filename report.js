@@ -111,5 +111,5 @@ async function showReport(stats) {
     }
   }
 
-  if (document.getElementById('narratorOn').checked) speakLine(spoken, rating >= 6 ? 'end' : 'endLoss');
+  if (document.getElementById('narratorOn').checked) speakLine(spoken, rating >= 6 ? 'end' : 'endLoss', true);   // 排在終場評論後面講
 }
