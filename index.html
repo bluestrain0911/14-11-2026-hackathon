@@ -59,6 +59,8 @@
       <div><b style="color:#7ec8ff">Speed + cymbals = volatility.</b> The faster it plays and the more cymbals you hear, the more violently the price is moving.</div>
       <div><b style="color:#3ecf8e">Pitch, heartbeat, layers = trend strength.</b> A strong rally climbs higher with denser bells; a deep sell-off has a faster heartbeat.</div>
       <div><b style="color:#ff6b6b">Sound effects = sudden spikes.</b> Whoosh + ding = jumped up in one minute. Whoosh + boom = crashed. Thunder = a huge spike.</div>
+      <div><b>Line colours:</b> <span style="color:#f5c542">gold = rising</span> · <span style="color:#ff4d4f">red = falling</span> ·
+        <span style="color:#b37feb">purple = big jumps but no clear direction</span> · <span style="color:#8a93a6">grey = calm</span></div>
     </div>
     <p style="font-size:13px; color:#9aa0a6; margin:10px 0 0;">The music describes the <b>market</b>, not your profit: going long earns when EUR rises, going short earns when it falls.
       Data: SGX FX EUR/USD 1-month forward, 1-minute bars, replayed from history.</p>
@@ -334,10 +336,10 @@ function analyse() {
   // 「方向一致度」= 淨漲跌 ÷ 這段路上所有上下跳動加起來的總距離
   //   一路穩穩往下走 → 接近 -1；一路往上 → 接近 +1；上上下下原地打轉 → 接近 0
   // 這樣「慢慢但持續地下跌」也能很快被抓到，不會被當成平穩。
-  const W = 12;
+  const W = 8;          // 看前後各 4 步（原本 6 步），比較短的急漲急跌也抓得到
   const netMoves = prices.map((p, i) => Math.abs(p - prices[Math.max(0, i - W)])).sort((a, b) => a - b);
   const BAND = netMoves[Math.floor(netMoves.length / 2)] || 1e-9;  // 12 步之間「一般」會走多遠
-  const ENTER = 0.35;   // 一致度超過這個值，才算開始漲/跌
+  const ENTER = 0.3;    // 一致度超過這個值，才算開始漲/跌
   const LEAVE = 0.15;   // 漲/跌中，一致度掉到這個值以下，才算結束（兩個門檻不同，避免一直來回切換）
   const CONFIRM = 3;    // 新的情緒要連續出現 3 步才切換（大暴衝例外，立刻切換）
 
@@ -357,8 +359,8 @@ function analyse() {
 
     // 這一步「想要」變成什麼情緒
     let want = 'calm';
-    if (consistency > ENTER && net > 0.5 * BAND) want = 'heaven';
-    else if (consistency < -ENTER && -net > 0.5 * BAND) want = 'horror';
+    if (consistency > ENTER && net > 0.4 * BAND) want = 'heaven';
+    else if (consistency < -ENTER && -net > 0.4 * BAND) want = 'horror';
     else if (state === 'heaven' && consistency > LEAVE) want = 'heaven';   // 還在漲，維持
     else if (state === 'horror' && consistency < -LEAVE) want = 'horror';  // 還在跌，維持
 
@@ -433,12 +435,19 @@ function computeSpikes() {
 
 // ---------- 3. 畫圖 ----------
 const MOOD_COLORS = { heaven: '#f5c542', horror: '#ff4d4f', calm: '#8a93a6' };
+const CHOPPY_COLOR = '#b37feb';   // 紫色：沒有明確方向，但上下跳很大（暴衝、劇烈震盪）
+
+// 每一段線要用什麼顏色
+function lineColor(i) {
+  if (moods[i] === 'calm' && (spikes[i] || spikes[i + 1] || (storm[i] || 0) > 0.35)) return CHOPPY_COLOR;
+  return MOOD_COLORS[moods[i]] || '#8a93a6';
+}
 const chart = new Chart(document.getElementById('chart'), {
   type: 'line',
   data: { labels: [], datasets: [
     // 價格線：每一段依照情緒上色（天堂 = 金色、恐怖 = 紅色、平穩 = 灰藍色）
     { data: [], borderColor: '#8a93a6', pointRadius: 0, borderWidth: 2.5,
-      segment: { borderColor: ctx => MOOD_COLORS[moods[ctx.p0DataIndex]] || '#8a93a6' } },
+      segment: { borderColor: ctx => lineColor(ctx.p0DataIndex) } },
     { data: [], borderColor: '#ff7a45', backgroundColor: '#ff7a45', pointRadius: 6, showLine: false }
   ]},
   options: { animation: false, plugins: { legend: { display: false } },
@@ -447,7 +456,7 @@ const chart = new Chart(document.getElementById('chart'), {
 
 function drawChart() {
   // 恢復成「整段資料」的上色方式（即時模式會把它改成只畫最近 90 分鐘）
-  chart.data.datasets[0].segment = { borderColor: ctx => MOOD_COLORS[moods[ctx.p0DataIndex]] || '#8a93a6' };
+  chart.data.datasets[0].segment = { borderColor: ctx => lineColor(ctx.p0DataIndex) };
   chart.data.labels = times;
   chart.data.datasets[0].data = prices;
   chart.data.datasets[1].data = prices.map(() => null);

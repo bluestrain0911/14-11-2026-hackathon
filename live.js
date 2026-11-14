@@ -137,7 +137,7 @@ async function startLive() {
 
   chart.data.datasets[0].segment = {
     // 歷史 = 灰色實線；即時的部分 = 依照情緒上色
-    borderColor: ctx => shownIndex[ctx.p0DataIndex] < liveFrom ? '#6b7385' : (MOOD_COLORS[moods[shownIndex[ctx.p0DataIndex]]] || '#8a93a6')
+    borderColor: ctx => shownIndex[ctx.p0DataIndex] < liveFrom ? '#6b7385' : lineColor(shownIndex[ctx.p0DataIndex])
   };
   document.getElementById('liveStatus').textContent =
     'History (grey line, first 90%): ' + times[0] + ' → ' + times[liveFrom] + '. Live from ' + times[liveFrom] +

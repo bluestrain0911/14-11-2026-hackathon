@@ -75,7 +75,9 @@ async function showReport(stats) {
     '</div>';
   box.classList.remove('hidden');
 
-  let spoken = 'Player rating: ' + rating + ' out of ten.';
+  // 語音：分數 + 前兩條建議（不看螢幕也聽得到）
+  const spokenTips = ruleTips(stats).slice(0, 2).map(tip => tip.replace(/[🛡→]/g, ' ').replace(/\s+/g, ' '));
+  let spoken = 'Player rating: ' + rating + ' out of ten. ' + spokenTips.join(' ');
 
   // 有 Gemini key：換成 Gemini 寫的個人化報告
   if (setting('geminiKey')) {
@@ -100,7 +102,8 @@ async function showReport(stats) {
           lines.map(l => escapeHtml(l.replace(/^[-*]\s*/, '• '))).join('<br>');
         const first = lines[0] || '';
         const match = first.match(/(\d+(\.\d)?)\s*\/\s*10/);
-        if (match) spoken = 'Player rating: ' + match[1] + ' out of ten. ' + (lines[1] || '').replace(/^[-*•]\s*/, '');
+        if (match) spoken = 'Player rating: ' + match[1] + ' out of ten. ' +
+          lines.slice(1, 4).map(l => l.replace(/^[-*•]\s*/, '')).join(' ');      // 唸出全部三條建議
       }
     } catch (e) {
       console.warn('Gemini report failed, keeping the built-in tips', e);
