@@ -476,7 +476,9 @@ function analyse() {
   const BAND = netMoves[Math.floor(netMoves.length / 2)] || 1e-9;  // 12 步之間「一般」會走多遠
   const ENTER = 0.3;    // 一致度超過這個值，才算開始漲/跌
   const LEAVE = 0.15;   // 漲/跌中，一致度掉到這個值以下，才算結束（兩個門檻不同，避免一直來回切換）
-  const CONFIRM = 3;    // 新的情緒要連續出現 3 步才切換（大暴衝例外，立刻切換）
+  // 新的情緒要連續出現幾步才切換（大暴衝例外，立刻切換）
+  // 即時模式每一步要等好幾秒，不能再多等，所以只要 1 步就切換
+  const CONFIRM = causalMode ? 1 : 3;
 
   moods = []; intensity = [];
   let state = 'calm', pending = 0, startIndex = 0;
@@ -612,6 +614,12 @@ const JUMP_DOWN_COLOR = '#eb2f96';   // 粉紅色：劇烈跳動中的急跌
 // 每一段線要用什麼顏色
 // k = 這段線的起點（畫的是 k → k+1）
 // 即時模式只知道過去，所以用「這段線走完之後」（k+1）的判斷來上色，才不會慢一步
+// 「現在的情緒」：即時模式用包含急轉彎的版本（每一步要等好幾秒，不怕音樂跳來跳去），
+// 回放和遊戲用平滑的版本（一秒好幾步，不平滑的話音樂會一直亂切）
+function moodAt(i) {
+  return (typeof liveActive !== 'undefined' && liveActive) ? (lineMoods[i] || moods[i]) : moods[i];
+}
+
 function lineColor(k) {
   const i = causalLines ? Math.min(k + 1, prices.length - 1) : k;
   const mood = lineMoods[i] || moods[i];
@@ -787,10 +795,10 @@ function onTick(time) {
   // ===== 決定情緒，並彈出長音 =====
   // 每一小節的開頭會重新彈一次；如果情緒在小節中間變了，就在下一拍（最多等 3 步）立刻切換，
   // 這樣音樂不會慢半拍，但也不會在拍子中間亂切
-  const moodChanged = moods[step] !== mood;
+  const moodChanged = moodAt(step) !== mood;
   if (tick === 0 || (tick % 4 === 0 && moodChanged)) {
     if (moodChanged) { pad.releaseAll(time); drone.releaseAll(time); }
-    mood = moods[step]; power = intensity[step]; wind = storm[step];
+    mood = moodAt(step); power = Math.max(intensity[step], mood !== moods[step] ? 0.6 : 0); wind = storm[step];
     if (tick === 0) bar++;
 
     // 每個聲音只代表一件事，聽的人才不會混淆：
@@ -911,10 +919,10 @@ function updateScreen(i) {
 
   if (hideAnswer) return;   // 遊戲中：不能讓畫面洩漏答案
 
-  const style = MOOD_STYLE[moods[i]];
+  const style = MOOD_STYLE[moodAt(i)];
   document.body.style.background = style.background;     // 背景顏色跟著情緒變
   const moodText = document.getElementById('keyText');
-  moodText.textContent = style.label + (moods[i] === 'calm' ? '' : ' ' + Math.round(intensity[i] * 100) + '%');
+  moodText.textContent = style.label + (moodAt(i) === 'calm' ? '' : ' ' + Math.round(Math.max(intensity[i], moodAt(i) !== moods[i] ? 0.6 : 0) * 100) + '%');
   moodText.style.color = style.color;
 
   const s = storm[i];

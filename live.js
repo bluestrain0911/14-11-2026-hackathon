@@ -135,7 +135,7 @@ async function startLive() {
   shownIndex = [];
   for (let k = 0; k < liveFrom; k += historyEvery) shownIndex.push(k);
   liveLastWarn = warnLevel[step] || 0;
-  liveLastMood = moods[step];
+  liveLastMood = moodAt(step);
 
   chart.data.datasets[0].segment = {
     // 歷史 = 灰色實線；即時的部分 = 依照情緒上色
@@ -198,17 +198,17 @@ function liveStep(i) {
   chart.update();
 
   // 瀏覽器分頁標題：切到別的分頁也看得到狀況
-  const label = { heaven: 'Rising', horror: 'Falling', calm: 'Calm' }[moods[i]];
+  const label = { heaven: 'Rising', horror: 'Falling', calm: 'Calm' }[moodAt(i)];
   const warn = warnLevel[i] || 0;
   document.title = (warn === 2 ? '🔴 STORM · ' : warn === 1 ? '🟡 ' : '🎵 ') + 'EUR/USD ' + prices[i].toFixed(5) + ' · ' + label;
 
   // 播報：情緒改變、風暴預警
   const facts = { time: times[i], price: prices[i].toFixed(5), volatilityTimesNormal: (stormRatio[i] || 1).toFixed(1) };
   if (warn > liveLastWarn) { narrate('stormWarning', facts, warn === 2); somethingHappened(null); }   // 警報聲本來就會響
-  else if (moods[i] !== liveLastMood) { narrate(moods[i], facts, false); somethingHappened(moods[i]); }
+  else if (moodAt(i) !== liveLastMood) { narrate(moodAt(i), facts, false); somethingHappened(moodAt(i)); }
   if (spikes[i]) { somethingHappened(null); if (Math.abs(spikes[i]) > 25 * spikeScale) narrate('spike', facts, true); }
   liveLastWarn = warn;
-  liveLastMood = moods[i];
+  liveLastMood = moodAt(i);
 }
 
 // 每秒檢查一次：資料多久沒更新了？
@@ -237,12 +237,12 @@ function checkFeed() {
   } else {
     // 用一句白話告訴使用者「現在市場怎麼樣」
     let calmFor = 0;
-    for (let k = i; k >= liveFrom && moods[k] === 'calm' && !warnLevel[k]; k--) calmFor++;
+    for (let k = i; k >= liveFrom && moodAt(k) === 'calm' && !warnLevel[k]; k--) calmFor++;
     const warn = warnLevel[i] || 0;
     const summary = warn === 2 ? '<b style="color:#ff4d4f">🔴 Storm — prices are moving violently</b>'
       : warn === 1 ? '<b style="color:#faad14">🟡 Getting choppy — volatility is rising</b>'
-      : moods[i] === 'heaven' ? '<b style="color:#f5c542">📈 Rising</b>'
-      : moods[i] === 'horror' ? '<b style="color:#ff6b6b">📉 Falling</b>'
+      : moodAt(i) === 'heaven' ? '<b style="color:#f5c542">📈 Rising</b>'
+      : moodAt(i) === 'horror' ? '<b style="color:#ff6b6b">📉 Falling</b>'
       : '<b style="color:#cfd6e4">😌 Market is calm — no big moves' + (calmFor > 1 ? ' for ' + calmFor + ' minutes' : '') + '</b>';
     status.innerHTML = summary + '<br><span style="color:#3ecf8e">● LIVE (simulated)</span> · market time ' + times[i] +
       ' · EUR/USD ' + prices[i].toFixed(5) + ' · last update ' + Math.round(secondsAgo) + ' s ago';
