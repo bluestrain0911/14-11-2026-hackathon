@@ -901,18 +901,22 @@ function onTickInner(time) {
     // 每個聲音只代表一件事，聽的人才不會混淆：
     //   音樂風格 = 方向；速度 = 波動有多大；音高、心跳快慢、樂器多寡 = 趨勢有多強
     const baseBpm = mood === 'heaven' ? 90 : mood === 'horror' ? 72 : 76;   // 每種風格自己的基本速度
-    setTempo(baseBpm + wind * 60);                                             // 越劇烈越快
+    // 漲跌越陡（power）、波動越大（wind）→ 速度越快；差距拉大，耳朵一聽就分得出來
+    setTempo(baseBpm + power * 55 + wind * 40);
     const gentle = document.getElementById('gentleMode').checked;
     horrorDistortion.wet.rampTo(mood === 'horror' && !gentle ? power * 0.8 : 0, 1);
 
     if (mood === 'heaven') {
       // 越強烈，整首歌的調就越往上升（最多升 5 個半音），像一路飛上天
-      chord = chordAt(HEAVEN_PROGRESSION[bar % 4], 60 + Math.round(power * 5));
+      // 漲得越陡，整首歌的調就越往上升（最多升 12 個半音 = 一個八度），像一路飛上天
+      chord = chordAt(HEAVEN_PROGRESSION[bar % 4], 60 + Math.round(power * 12));
       pad.triggerAttackRelease(chord.map(midi), '1m', time, 0.5 + 0.5 * power);
     } else if (mood === 'horror') {
       // 低音 C + F#：「增四度」，又叫「魔鬼音程」，聽起來很不安
-      const notes = [36, 42];
-      if (power > 0.5 && !document.getElementById('gentleMode').checked) notes.push(37);    // 再加一個只差半音的音，更刺耳（溫和模式不加）
+      // 跌得越陡，低音越往下沉（最多降 7 個半音）
+      const sink = Math.round(power * 7);
+      const notes = [36 - sink, 42 - sink];
+      if (power > 0.5 && !document.getElementById('gentleMode').checked) notes.push(37 - sink);    // 再加一個只差半音的音，更刺耳（溫和模式不加）
       drone.triggerAttackRelease(notes.map(midi), '1m', time, 0.6 + 0.4 * power);
     } else {
       chord = chordAt(CALM_PROGRESSION[bar % 4], 55);
@@ -923,17 +927,20 @@ function onTickInner(time) {
   // ===== 每個 16 分音符 =====
   if (mood === 'heaven') {
     // 往上爬的鈴聲琶音；越強烈越密、越高
-    const every = power > 0.6 ? 1 : 2;
+    // 節奏分三段：慢慢漲 = 4 拍一個音；漲得快 = 2 拍一個；急漲 = 每拍都響
+    const every = power > 0.6 ? 1 : power > 0.3 ? 2 : 4;
     if (tick % every === 0) {
       const ladder = [...chord, ...chord.map(n => n + 12)];
       const note = ladder[(tick / every) % ladder.length] + 12 + 12 * Math.round(power);
-      bell.triggerAttackRelease(midi(note), '8n', time, 0.6);
+      bell.triggerAttackRelease(midi(note), '8n', time, 0.35 + 0.55 * power);
     }
     // 偶爾閃一下更高的音，像星星
     if (Math.random() < power * 0.25) bell.triggerAttackRelease(midi(chord[2] + 36), '16n', time, 0.4);
   } else if (mood === 'horror') {
     // 心跳「咚—咚」，越恐怖跳越快
-    const beats = power > 0.75 ? [0, 2, 4, 6, 8, 10, 12, 14] : power > 0.4 ? [0, 2, 8, 10] : [0, 2];
+    const beats = power > 0.85 ? [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14]     // 急跌：心跳狂飆
+                : power > 0.6 ? [0, 2, 4, 6, 8, 10, 12, 14]
+                : power > 0.3 ? [0, 2, 8, 10] : [0, 8];
     if (beats.includes(tick)) heart.triggerAttackRelease(tick % 4 === 0 ? 'C1' : 'A0', '8n', time);
     // 詭異的高音，會顫抖，越恐怖越常出現
     const gentle = document.getElementById('gentleMode').checked;
@@ -995,7 +1002,7 @@ function stepLoop() {
   // 每一步的長度 = 幾個 16 分音符（速度選單），音樂越激烈（bpm 越快）走得越快
   const speedId = typeof surviving !== 'undefined' && surviving ? 'surviveSpeed' : 'speedSelect';
   const every = Number(document.getElementById(speedId).value) || 4;
-  const bpm = Math.max(40, Math.min(200, currentTempo || 76));
+  const bpm = Math.max(40, Math.min(125, currentTempo || 76));   // 音樂可以很快，但圖表最多只快到 125 bpm 的步調，遊戲才來得及反應
   stepTimer = setTimeout(stepLoop, every * 60000 / (bpm * 4));
 }
 
@@ -1003,9 +1010,9 @@ function stepLoop() {
 // 改成直接跳到新速度，而且只有差 4 bpm 以上、距離上次至少 2 秒才改，避免累積大量速度變化
 let lastTempoAt = 0;
 function setTempo(target) {
-  target = Math.round(Math.max(50, Math.min(160, target)));
+  target = Math.round(Math.max(50, Math.min(175, target)));
   const nowMs = performance.now();
-  if (Math.abs(target - currentTempo) < 4 || nowMs - lastTempoAt < 2000) return;
+  if (Math.abs(target - currentTempo) < 3 || nowMs - lastTempoAt < 1000) return;
   lastTempoAt = nowMs;
   currentTempo = target;
   Tone.Transport.bpm.value = target;
