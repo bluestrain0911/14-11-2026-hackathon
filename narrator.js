@@ -199,8 +199,21 @@ async function geminiGenerate(prompt) {
 }
 
 // ---------- ElevenLabs：把句子變成聲音 ----------
+// 免費方案用 API 時，舊的「legacy」聲音（例如預設的 Rachel）會被拒絕（HTTP 402）。
+// 遇到 402 時，自動去帳號裡找一個免費可用的預設聲音，記下來，之後都用它。
+let elevenVoiceFixTried = false;
+async function findFreeVoice() {
+  const r = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': setting('elevenKey') } });
+  if (!r.ok) return null;
+  const voices = (await r.json()).voices || [];
+  const ok = v => v.category === 'premade' && !v.is_legacy;
+  const pick = voices.find(v => ok(v) && /^(George|Sarah|Brian|Alice|Daniel|Charlotte)$/i.test(v.name)) ||
+               voices.find(ok) || voices.find(v => !v.is_legacy) || null;
+  return pick;
+}
+
 async function speakEleven(line, event) {
-  const voice = setting('elevenVoice') || '21m00Tcm4TlvDq8ikWAM';
+  const voice = setting('elevenVoice') || 'JBFqnCBsd6RMkjVDRZzb';
   const response = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + voice, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'xi-api-key': setting('elevenKey') },
@@ -209,6 +222,16 @@ async function speakEleven(line, event) {
       voice_settings: { stability: event === 'pro' ? 0.8 : event === 'calm' ? 0.5 : 0.25, similarity_boost: 0.8,
                         style: event === 'pro' ? 0 : event === 'calm' ? 0.2 : 0.7, use_speaker_boost: true } })
   });
+  if (response.status === 402 && !elevenVoiceFixTried) {
+    elevenVoiceFixTried = true;
+    const pick = await findFreeVoice();
+    if (pick && pick.voice_id !== voice) {
+      saveSetting('elevenVoice', pick.voice_id);
+      document.getElementById('elevenVoice').value = pick.voice_id;
+      document.getElementById('narratorText').textContent = '🔁 Switched ElevenLabs voice to ' + pick.name + ' (free-plan voice)';
+      return speakEleven(line, event);
+    }
+  }
   if (!response.ok) {
     // 把 ElevenLabs 回傳的原因顯示出來（例如金鑰沒有權限、免費方案被擋）
     let detail = '';
