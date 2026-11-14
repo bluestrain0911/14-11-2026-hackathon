@@ -210,7 +210,16 @@ function checkFeed() {
     status.innerHTML = '<b style="color:#ff4d4f">⚠️ No new data for ' + Math.round(secondsAgo) +
       ' s — feed may be down. Music paused so it never pretends the market is moving.</b>';
   } else {
-    status.innerHTML = '<span style="color:#3ecf8e">● LIVE (simulated)</span> · market time ' + times[i] +
+    // 用一句白話告訴使用者「現在市場怎麼樣」
+    let calmFor = 0;
+    for (let k = i; k >= liveFrom && moods[k] === 'calm' && !warnLevel[k]; k--) calmFor++;
+    const warn = warnLevel[i] || 0;
+    const summary = warn === 2 ? '<b style="color:#ff4d4f">🔴 Storm — prices are moving violently</b>'
+      : warn === 1 ? '<b style="color:#faad14">🟡 Getting choppy — volatility is rising</b>'
+      : moods[i] === 'heaven' ? '<b style="color:#f5c542">📈 Rising</b>'
+      : moods[i] === 'horror' ? '<b style="color:#ff6b6b">📉 Falling</b>'
+      : '<b style="color:#cfd6e4">😌 Market is calm — no big moves' + (calmFor > 1 ? ' for ' + calmFor + ' minutes' : '') + '</b>';
+    status.innerHTML = summary + '<br><span style="color:#3ecf8e">● LIVE (simulated)</span> · market time ' + times[i] +
       ' · EUR/USD ' + prices[i].toFixed(5) + ' · last update ' + Math.round(secondsAgo) + ' s ago';
   }
 }
