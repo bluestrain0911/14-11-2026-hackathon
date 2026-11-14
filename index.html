@@ -622,18 +622,42 @@ const JUMP_DOWN_COLOR = '#eb2f96';   // 粉紅色：劇烈跳動中的急跌
 // 即時模式只知道過去，所以用「這段線走完之後」（k+1）的判斷來上色，才不會慢一步
 // 「現在的情緒」：即時模式用包含急轉彎的版本（每一步要等好幾秒，不怕音樂跳來跳去），
 // 回放和遊戲用平滑的版本（一秒好幾步，不平滑的話音樂會一直亂切）
+// ===== 即時模式的判斷：只看「剛剛實際走了多少」，簡單、直接、不延遲 =====
+//   這一分鐘走得很大 → 就用這一分鐘的方向
+//   否則看最近 3 分鐘的淨漲跌：超過一般幅度的 0.6 倍就是漲（黃）或跌（紅），太小才是平穩（灰）
+let recentScale = 1e-9, stepScale = 1e-9;
+function computeRecentScales() {
+  const three = [], one = [];
+  for (let k = 3; k < prices.length; k++) three.push(Math.abs(prices[k] - prices[k - 3]));
+  for (let k = 1; k < prices.length; k++) one.push(Math.abs(prices[k] - prices[k - 1]));
+  three.sort((a, b) => a - b); one.sort((a, b) => a - b);
+  recentScale = three[Math.floor(three.length / 2)] || 1e-9;
+  stepScale = one[Math.floor(one.length / 2)] || 1e-9;
+}
+function recentMood(i) {
+  if (i < 1) return 'calm';
+  const last = prices[i] - prices[i - 1];
+  if (Math.abs(last) >= 1.5 * stepScale) return last > 0 ? 'heaven' : 'horror';
+  const net = prices[i] - prices[Math.max(0, i - 3)];
+  if (Math.abs(net) < 0.6 * recentScale) return 'calm';
+  return net > 0 ? 'heaven' : 'horror';
+}
+const isJumpy = i => !!spikes[i] || (storm[i] || 0) > 0.35;
+
 function moodAt(i) {
   if (!(typeof liveActive !== 'undefined' && liveActive)) return moods[i];
-  const mood = lineMoods[i] || moods[i];
-  // 即時模式：劇烈跳動（圖上綠色／粉紅色）時，音樂也跟著剛剛那一下的方向走，不再播平靜的音樂
-  if (mood === 'calm' && i > 0 && (spikes[i] || (storm[i] || 0) > 0.35)) {
-    return prices[i] >= prices[i - 1] ? 'heaven' : 'horror';
-  }
-  return mood;
+  return recentMood(i);
 }
 
 function lineColor(k) {
-  const i = causalLines ? Math.min(k + 1, prices.length - 1) : k;
+  if (causalLines) {
+    // 即時模式：這段線（k → k+1）用「走到 k+1 時」剛剛實際的走勢上色
+    const i = Math.min(k + 1, prices.length - 1);
+    const m = recentMood(i);
+    if (m !== 'calm' && isJumpy(i)) return m === 'heaven' ? JUMP_UP_COLOR : JUMP_DOWN_COLOR;
+    return MOOD_COLORS[m];
+  }
+  const i = k;
   const mood = lineMoods[i] || moods[i];
   if (mood === 'calm' && (spikes[i] || spikes[k + 1] || (storm[i] || 0) > 0.35)) {
     return (prices[k + 1] ?? prices[k]) >= prices[k] ? JUMP_UP_COLOR : JUMP_DOWN_COLOR;
@@ -795,7 +819,15 @@ let bar = 0;           // 第幾小節
 let mood = 'calm', power = 0, wind = 0;   // 這一小節的情緒、強度、風暴程度
 let chord = [60, 64, 67];                 // 這一小節的和弦
 
+// 保護音樂引擎：就算某一次出錯，也只跳過那一拍，不會讓整首音樂停掉
+let lastTickAt = 0;
 function onTick(time) {
+  lastTickAt = performance.now();
+  try { onTickInner(time); }
+  catch (e) { console.error('Music engine error (skipped one beat):', e); }
+}
+
+function onTickInner(time) {
   if (step >= prices.length) {
     if (!finishing) {
       finishing = true;

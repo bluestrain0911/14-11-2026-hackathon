@@ -157,6 +157,7 @@ async function startLive() {
   analyse();
   causalMode = false;
   causalLines = true;             // 圖表用「只看過去」的方式上色
+  computeRecentScales();
 
   // 前 90% 當作「已經發生的歷史」直接畫出來，從 90% 的位置開始即時播放到 100%
   liveFrom = Math.floor(prices.length * 0.9);
@@ -273,6 +274,15 @@ function checkFeed() {
   const limit = Math.max(8, liveInterval() / 1000 * 3);    // 超過 3 個更新週期沒資料就算中斷
   const status = document.getElementById('liveStatus');
   const i = step;
+
+  // 看門狗：資料還在進來，但音樂引擎超過 2 秒沒動 → 自動重新啟動音樂
+  if (!stale && performance.now() - lastTickAt > 2000) {
+    console.warn('Music engine stalled, restarting');
+    if (Tone.context.state !== 'running') Tone.context.resume();
+    if (loopId === null) loopId = Tone.Transport.scheduleRepeat(onTick, '16n');
+    Tone.Transport.start();
+    lastTickAt = performance.now();
+  }
 
   // 聲音被瀏覽器暫停了（例如電腦睡眠後）：這跟資料無關，要分開講清楚
   if (Tone.context.state !== 'running') {
