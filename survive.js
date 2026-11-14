@@ -72,7 +72,7 @@ whistleSynth.volume.value = -22;              // 小聲一點，不要刺耳
 function whistle(times, long) {
   for (let k = 0; k < times; k++) {
     const start = Tone.now() + k * 0.45;
-    whistleSynth.triggerAttackRelease(1800, long && k === times - 1 ? 0.5 : 0.18, start);
+    sfx(() => whistleSynth.triggerAttackRelease(1800, long && k === times - 1 ? 0.5 : 0.18, start + 0.02));
   }
 }
 
@@ -81,8 +81,10 @@ const airhorn = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'sawtooth' 
   envelope: { attack: 0.02, decay: 0.1, sustain: 0.9, release: 0.1 } }).toDestination();
 airhorn.volume.value = -14;
 function hornBlast() {
-  airhorn.triggerAttackRelease(['Bb4', 'D5', 'F5'], 0.25, Tone.now());
-  airhorn.triggerAttackRelease(['Bb4', 'D5', 'F5'], 0.7, Tone.now() + 0.35);
+  sfx(() => {
+    airhorn.triggerAttackRelease(['Bb4', 'D5', 'F5'], 0.25, Tone.now() + 0.02);
+    airhorn.triggerAttackRelease(['Bb4', 'D5', 'F5'], 0.7, Tone.now() + 0.37);
+  });
 }
 
 let moneyHistory = [];       // 每一步的錢，用來判斷「進球」
@@ -172,6 +174,9 @@ function togglePause() {
   document.getElementById('pauseBtn').textContent = paused ? '▶ Resume (P)' : '⏸ Pause (P)';
 }
 document.getElementById('pauseBtn').addEventListener('click', togglePause);
+
+// 安全地播一個音效：音效出錯時只略過這個聲音，不影響遊戲
+function sfx(play) { try { play(); } catch (e) { console.warn('Sound skipped:', e.message); } }
 
 // ---------- 每走一步（由主程式的 updateScreen 呼叫） ----------
 function surviveStep(i) {
@@ -278,17 +283,19 @@ function surviveStep(i) {
   if (!document.getElementById('gentleMode').checked &&
       moods[i] === 'horror' && intensity[i] > 0.6 && now - lastGhost > 8000 && Math.random() < 0.15) {
     ghostUntil = now + 450; lastGhost = now;
-    screamNoise.triggerAttackRelease('8n');
-    screamTone.triggerAttackRelease(900, 0.5);
-    screamTone.frequency.exponentialRampTo(150, 0.5);      // 音高快速往下掉，像尖叫
+    sfx(() => {
+      screamNoise.triggerAttackRelease('8n', Tone.now() + 0.02);
+      screamTone.triggerAttackRelease(900, 0.5, Tone.now() + 0.02);
+      screamTone.frequency.exponentialRampTo(150, 0.5);      // 音高快速往下掉，像尖叫
+    });
   }
 
   // 輸光了
   if (money <= 0) {
     money = 0; gameOver = true;
     stop();
-    ['G3', 'F#3', 'F3', 'E3'].forEach((note, k) =>
-      sadTrombone.triggerAttackRelease(note, k === 3 ? 1.2 : 0.4, Tone.now() + k * 0.45));
+    sfx(() => ['G3', 'F#3', 'F3', 'E3'].forEach((note, k) =>
+      sadTrombone.triggerAttackRelease(note, k === 3 ? 1.2 : 0.4, Tone.now() + 0.02 + k * 0.45)));
     whistle(3, true);
     crowdGroan();
     setTimeout(() => crowdGain.gain.rampTo(0, 2), 2500);
@@ -376,7 +383,7 @@ function armShield() {
   shields--; shieldArmed = true; shieldBase = money;
   if (performance.now() < promptUntil) { warningsProtected++; promptUntil = 0; }   // 玩家聽了警告，開了盾牌
   popups.push({ text: '🛡 SHIELD ON (max loss $' + shieldLimit() + ')', color: '#7ec8ff', y: -20, life: 1.4 });
-  clang.triggerAttackRelease('C4', '16n');
+  sfx(() => clang.triggerAttackRelease('C4', '16n', Tone.now() + 0.02));
   updateStats();
 }
 
@@ -387,7 +394,7 @@ function triggerShield(i) {
   shieldSaves++;
   setPosition(0);
   popups.push({ text: '🛡 SHIELD SAVED YOU! (-$' + saved + ')', color: '#7ec8ff', y: -40, life: 2, big: true });
-  clang.triggerAttackRelease('C3', '8n');
+  sfx(() => clang.triggerAttackRelease('C3', '8n', Tone.now() + 0.05));
   narrate('shield', { time: times[i], lossCapped: saved, balance: Math.round(money) }, true);
 }
 
@@ -458,7 +465,7 @@ function drawStage(t) {
   ctx.fillRect(-10, H - 30, W + 20, 40);              // 地板
 
   // 掉落物：天堂掉金幣、恐怖下紅雨
-  if (surviving && !gameOver) {
+  if (surviving && !gameOver && !paused && particles.length < 120) {   // 暫停時不再掉東西；數量有上限
     const rate = mood === 'calm' ? 0 : 0.2 + power * 0.8;
     if (Math.random() < rate) {
       particles.push({ x: Math.random() * W, y: -10, vy: 60 + Math.random() * 80,

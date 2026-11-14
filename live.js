@@ -57,7 +57,7 @@ cue.volume.value = -8;
 function playCue(mood) {
   const now = Tone.now();
   const notes = mood === 'heaven' ? ['C5', 'E5', 'G5'] : mood === 'horror' ? ['G3', 'Eb3', 'C3'] : ['A5'];
-  notes.forEach((n, k) => cue.triggerAttackRelease(n, '8n', now + k * 0.15));
+  try { notes.forEach((n, k) => cue.triggerAttackRelease(n, '8n', now + 0.02 + k * 0.15)); } catch (e) { console.warn('Cue skipped:', e.message); }
 }
 
 function applyBackgroundMode() {
@@ -275,14 +275,7 @@ function checkFeed() {
   const status = document.getElementById('liveStatus');
   const i = step;
 
-  // 看門狗：資料還在進來，但音樂引擎超過 2 秒沒動 → 自動重新啟動音樂
-  if (!stale && performance.now() - lastTickAt > 2000) {
-    console.warn('Music engine stalled, restarting');
-    if (Tone.context.state !== 'running') Tone.context.resume();
-    if (loopId === null) loopId = Tone.Transport.scheduleRepeat(onTick, '16n');
-    Tone.Transport.start();
-    lastTickAt = performance.now();
-  }
+  // （音樂引擎卡住的情況，交給主程式的看門狗處理）
 
   // 聲音被瀏覽器暫停了（例如電腦睡眠後）：這跟資料無關，要分開講清楚
   if (Tone.context.state !== 'running') {

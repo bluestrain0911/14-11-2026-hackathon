@@ -722,6 +722,9 @@ soft.volume.value = -14;
 const horrorDistortion = new Tone.Distortion(0.5).connect(reverb);
 horrorDistortion.wet.value = 0;
 const droneFilter = new Tone.Filter(500, 'lowpass').connect(horrorDistortion);
+// 限制同時發聲的數量，減輕電腦負擔（太多聲音同時響會讓音效引擎卡住）
+pad.maxPolyphony = 8;
+bell.maxPolyphony = 10;
 const drone = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'sawtooth' },
   envelope: { attack: 1, decay: 0.5, sustain: 0.9, release: 2 } }).connect(droneFilter);
 drone.volume.value = -16;
@@ -794,13 +797,19 @@ const alarm = new Tone.Synth({ oscillator: { type: 'triangle' },
   envelope: { attack: 0.01, decay: 0.25, sustain: 0.2, release: 0.3 } }).toDestination();
 alarm.volume.value = -10;
 function playAlarm(level) {
-  const now = Tone.now();
+  try { playAlarmInner(level); } catch (e) { console.warn('Alarm sound skipped:', e.message); }
+}
+function playAlarmInner(level) {
+  const now = Tone.now() + 0.02;
   const notes = level === 2 ? ['A5', 'E5', 'A5', 'E5'] : ['E5', 'C5'];
   notes.forEach((note, k) => alarm.triggerAttackRelease(note, '16n', now + k * 0.22));
 }
 
 // 在圖表上閃一下「⚡ +3.9 pips in one step」
 function showSpike(pips) {
+  try { showSpikeInner(pips); } catch (e) { console.warn('Spike flash skipped:', e.message); }
+}
+function showSpikeInner(pips) {
   if (hideAnswer) return;   // 猜漲跌遊戲中不顯示，只聽聲音
   const flash = document.getElementById('spikeFlash');
   const up = pips > 0;
@@ -950,7 +959,14 @@ function showStormBanner(i) {
   shownWarn = level;
 }
 
+// 保護畫面更新：任何一次出錯都只略過那一次，不會讓之後的畫面（和遊戲）整個卡住。
+// （Tone.js 的畫面排程只要遇到一次錯誤就會停止，這就是之前「卡在某一步不動」的原因）
 function updateScreen(i) {
+  try { updateScreenInner(i); }
+  catch (e) { console.error('Screen update error (skipped one step):', e); }
+}
+
+function updateScreenInner(i) {
   if (typeof surviving !== 'undefined' && surviving) surviveStep(i);   // 生存模式：算錢、播報、特效
   const live = typeof liveActive !== 'undefined' && liveActive;
   if (live) liveStep(i);    // 即時監控模式：滾動圖表、警報（它自己畫圖）
@@ -982,6 +998,38 @@ function updateScreen(i) {
 
 // ---------- 7. 按鈕 ----------
 let loopId = null;
+
+// ===== 音樂引擎看門狗（所有模式）=====
+// 如果正在播放，但音樂引擎超過 1.5 秒沒有動（例如音效裝置卡住、瀏覽器暫停聲音），
+// 就自動重新啟動。重試 3 次還是不行，就在畫面上請使用者點一下。
+let watchdogTries = 0;
+setInterval(() => {
+  const isPaused = typeof paused !== 'undefined' && paused;
+  if (loopId === null || isPaused) { watchdogTries = 0; return; }
+  if (performance.now() - lastTickAt < 1500) { watchdogTries = 0; hideStall(); return; }
+  watchdogTries++;
+  console.warn('Music engine stalled (try ' + watchdogTries + '). Audio state:', Tone.context.state,
+               'audio time:', Tone.context.currentTime);
+  if (Tone.context.state !== 'running') Tone.context.resume();
+  Tone.Transport.start();
+  lastTickAt = performance.now();
+  if (watchdogTries >= 3) showStall();
+}, 1000);
+
+function showStall() {
+  let box = document.getElementById('stallBox');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'stallBox';
+    box.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:50;background:#faad14;' +
+      'color:#2a1d00;font-weight:800;padding:12px 18px;border-radius:12px;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,.4)';
+    box.textContent = '🔇 Sound engine stalled — click here to restart it';
+    box.onclick = async () => { await Tone.start(); await Tone.context.resume(); Tone.Transport.start(); lastTickAt = performance.now(); hideStall(); };
+    document.body.appendChild(box);
+  }
+  box.style.display = 'block';
+}
+function hideStall() { const box = document.getElementById('stallBox'); if (box) box.style.display = 'none'; }
 let finishing = false;      // 播完時只觸發一次「結束」
 let onFinished = null;      // 播完後要做的事（遊戲會用到）
 
