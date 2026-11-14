@@ -125,6 +125,7 @@ async function startLive() {
   causalMode = true;              // 只用過去的資料判斷
   analyse();
   causalMode = false;
+  causalLines = true;             // 圖表用「只看過去」的方式上色
 
   // 前 90% 當作「已經發生的歷史」直接畫出來，從 90% 的位置開始即時播放到 100%
   liveFrom = Math.floor(prices.length * 0.9);
@@ -161,6 +162,7 @@ async function startLive() {
 function stopLive() {
   if (!liveActive) return;
   liveActive = false;
+  causalLines = false;
   clearInterval(liveTimer);
   clearInterval(feedTimer);
   clearInterval(heartbeatTimer);

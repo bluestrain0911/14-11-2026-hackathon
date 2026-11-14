@@ -62,7 +62,8 @@
       <span>⚡ Ding = spike up</span>
       <span>💥 Boom = crash</span>
       <span>🔁 Beep-beep = quick reversal</span>
-      <span><span style="color:#b37feb">■</span> Purple line = jumpy, no direction</span>
+      <span><span style="color:#52c41a">■</span> Green = jumpy rise</span>
+      <span><span style="color:#eb2f96">■</span> Pink = jumpy fall</span>
     </div>
     <div style="font-size:12px; color:#9aa0a6; margin-top:6px;">
       Music shows the market (EUR vs USD), not your profit · Data: SGX FX EUR/USD, 1-minute
@@ -329,6 +330,7 @@ function loadData(d) {
 // storm：最近幾筆的「振幅」（最高價 - 最低價）有多大（0～1），用來加鼓和加快速度。
 let moods = [], intensity = [], storm = [];
 let causalMode = false;   // true = 即時模式：只能用過去的資料判斷
+let causalLines = false;  // 圖表是不是用「只看過去」的結果上色（即時模式）
 // spikes：一分鐘內突然暴漲或暴跌的時刻。0 = 沒有；正數 = 暴漲；負數 = 暴跌（數字 = 漲跌了幾 pip）
 let spikes = [];
 // 風暴預警（只看過去，不偷看未來）：
@@ -412,7 +414,7 @@ function analyse() {
 
 // 修正「趨勢中的急轉彎」：
 // 情緒是看一小段時間的整體方向，所以上漲趨勢中突然急跌一下，還是會被算成「上漲」（黃色）。
-// 這裡把「跟目前情緒方向相反、而且幅度明顯（累積超過一般一步的 2 倍）」的連續幾步，在圖上改成實際的方向。
+// 這裡把「跟目前情緒方向相反、而且幅度明顯（累積超過一般一步的 1.2 倍）」的連續幾步，在圖上改成實際的方向。
 // 背景音樂（moods）不跟著切換，不然音樂會一直跳來跳去；改成在那一刻播一個短短的「急轉」音效。
 let lineMoods = [];      // 圖表上色用（包含急轉彎）
 let reversal = [];       // 這一步是不是急轉彎的開始：'up' / 'down' / null
@@ -434,10 +436,12 @@ function fixSharpReversals() {
     const start = i, mood = moods[i];
     let total = 0;
     while (i < prices.length && moods[i] === mood && against(i)) { total += Math.abs(move(i)); i++; }
-    if (total > 2 * normal) {
+    // 顏色：反方向走超過一般一步的 1.2 倍就改顏色（圖上看得出來的都要對）
+    // 音效：要超過 2 倍才「嘟嘟」，不然會太吵
+    if (total > 1.2 * normal) {
       const actual = mood === 'heaven' ? 'horror' : 'heaven';
       for (let k = start; k < i; k++) lineMoods[k] = actual;
-      reversal[start] = actual === 'heaven' ? 'up' : 'down';
+      if (total > 2 * normal) reversal[start] = actual === 'heaven' ? 'up' : 'down';
     }
   }
 }
@@ -475,12 +479,19 @@ function computeSpikes() {
 
 // ---------- 3. 畫圖 ----------
 const MOOD_COLORS = { heaven: '#f5c542', horror: '#ff4d4f', calm: '#8a93a6' };
-const CHOPPY_COLOR = '#b37feb';   // 紫色：沒有明確方向，但上下跳很大（暴衝、劇烈震盪）
+// 劇烈跳動時，用「這一段實際往哪走」來決定顏色：
+const JUMP_UP_COLOR = '#52c41a';     // 綠色：劇烈跳動中的急漲
+const JUMP_DOWN_COLOR = '#eb2f96';   // 粉紅色：劇烈跳動中的急跌
 
 // 每一段線要用什麼顏色
-function lineColor(i) {
+// k = 這段線的起點（畫的是 k → k+1）
+// 即時模式只知道過去，所以用「這段線走完之後」（k+1）的判斷來上色，才不會慢一步
+function lineColor(k) {
+  const i = causalLines ? Math.min(k + 1, prices.length - 1) : k;
   const mood = lineMoods[i] || moods[i];
-  if (mood === 'calm' && (spikes[i] || spikes[i + 1] || (storm[i] || 0) > 0.35)) return CHOPPY_COLOR;
+  if (mood === 'calm' && (spikes[i] || spikes[k + 1] || (storm[i] || 0) > 0.35)) {
+    return (prices[k + 1] ?? prices[k]) >= prices[k] ? JUMP_UP_COLOR : JUMP_DOWN_COLOR;
+  }
   return MOOD_COLORS[mood] || '#8a93a6';
 }
 const chart = new Chart(document.getElementById('chart'), {
