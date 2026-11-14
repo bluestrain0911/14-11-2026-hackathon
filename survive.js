@@ -506,7 +506,7 @@ function drawStage(t) {
       ctx.fillText(p.text, W / 2, H / 2 - 20 - p.y * 0.3);
       ctx.textAlign = 'left';
     } else {
-      ctx.font = 'bold 18px system-ui'; ctx.textAlign = 'center';
+      ctx.font = 'bold 22px system-ui'; ctx.textAlign = 'center';
       ctx.fillText(p.text, W / 2, H / 2 - 40 - p.y);
       ctx.textAlign = 'left';
     }
@@ -515,13 +515,13 @@ function drawStage(t) {
 
   // 提示：告訴新手「現在的音樂代表什麼、可以怎麼做」
   if (surviving && !gameOver && document.getElementById('hintsOn').checked && performance.now() > countdownEnd) {
-    const hint = mood === 'heaven' ? '♪ Heaven = rising → ⬆ Buy'
-               : mood === 'horror' ? '♪ Horror = falling → ⬇ Sell'
-               : '♪ Calm = flat → 💵 Cash';
-    ctx.font = 'bold 14px system-ui';
-    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(10, H - 72, ctx.measureText(hint).width + 20, 28);
+    const hint = mood === 'heaven' ? '⬆ Rising → Buy'
+               : mood === 'horror' ? '⬇ Falling → Sell'
+               : '➡ Flat → Cash';
+    ctx.font = 'bold 18px system-ui';
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(10, H - 72, ctx.measureText(hint).width + 20, 30);
     ctx.fillStyle = mood === 'heaven' ? '#f5c542' : mood === 'horror' ? '#ff6b6b' : '#cfd6e4';
-    ctx.fillText(hint, 20, H - 52);
+    ctx.fillText(hint, 20, H - 50);
   }
 
   // 計分板：像電視轉播右上角那樣
@@ -532,15 +532,18 @@ function drawStage(t) {
   if (warn > 0) {
     const flash = Math.floor(t / 400) % 2 === 0;
     ctx.fillStyle = warn === 2 ? (flash ? '#ff4d4f' : '#a3262a') : '#faad14';
-    const warnW = Math.min(330, W - 20);
-    ctx.fillRect(10, 86, warnW, 28);
-    ctx.fillStyle = warn === 2 ? '#ffffff' : '#3a2e00'; ctx.font = 'bold 13px system-ui';
-    ctx.fillText((warn === 2 ? '🔴 STORM ' : '🟡 Storm brewing ') + stormRatio[lastIndex].toFixed(1) + '× normal', 18, 105);
+    ctx.font = 'bold 16px system-ui';
+    const warnText = (warn === 2 ? '🔴 STORM ' : '🟡 Choppy ') + stormRatio[lastIndex].toFixed(1) + '×';
+    const warnW = ctx.measureText(warnText).width + 20;
+    ctx.fillRect(10, 10, warnW, 32);
+    ctx.fillStyle = warn === 2 ? '#ffffff' : '#3a2e00';
+    ctx.fillText(warnText, 20, 32);
     if (performance.now() < promptUntil && position !== 0 && !shieldArmed) {
-      ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(10, 116, warnW, 28);
-      ctx.fillStyle = '#7ec8ff'; ctx.font = 'bold 13px system-ui';
-      ctx.fillText(shields > 0 ? '🛡 Protect? Press E (max -$' + shieldLimit() + ')'
-                               : '⚠️ No shields — Space = cash', 18, 135);
+      const ask = shields > 0 ? '🛡 Protect? Press E' : '⚠️ No shields → Space';
+      ctx.font = 'bold 16px system-ui';
+      ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(10, 46, ctx.measureText(ask).width + 20, 32);
+      ctx.fillStyle = '#7ec8ff';
+      ctx.fillText(ask, 20, 68);
     }
   }
 
@@ -550,9 +553,8 @@ function drawStage(t) {
     ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center';
     ctx.font = 'bold 72px system-ui'; ctx.fillText(String(Math.ceil(left / 1000)), W / 2, H / 2 + 10);
-    ctx.font = '13px system-ui';
-    ctx.fillText('W/⬆ Buy · S/⬇ Sell · Space Cash', W / 2, H / 2 + 46);
-    ctx.fillText('E Shield · B Status · P Pause', W / 2, H / 2 + 66);
+    ctx.font = 'bold 16px system-ui';
+    ctx.fillText('W Buy · S Sell · Space Cash', W / 2, H / 2 + 50);
     ctx.textAlign = 'left';
   }
 
@@ -578,26 +580,18 @@ function drawStage(t) {
   if (performance.now() < ghostUntil) drawGhost(W, H);
 }
 
-// 電視轉播風格的計分板
+// 計分板：只留「LIVE + 時間 + 進度」，錢和盾牌已經在右邊的大卡片上了
 function drawScoreboard(W, t) {
-  const boxW = Math.min(290, W - 20), x = W - boxW - 10, y = 10;
-  ctx.fillStyle = 'rgba(10,12,18,0.85)'; ctx.fillRect(x, y, boxW, 44);
-  ctx.fillStyle = '#d93a3a'; ctx.fillRect(x, y, 56, 44);
-  ctx.fillStyle = '#ffffff'; ctx.font = 'bold 14px system-ui';
-  ctx.fillText(Math.floor(t / 500) % 2 ? '● LIVE' : '  LIVE', x + 4, y + 27);
-  ctx.font = 'bold 13px system-ui'; ctx.fillStyle = '#9aa0a6';
-  ctx.fillText(times[lastIndex] + '  ·  MIN ' + (lastIndex + 1) + '/' + prices.length, x + 64, y + 17);
-  const profit = money - START_MONEY;
-  ctx.font = 'bold 18px system-ui'; ctx.fillStyle = profit >= 0 ? '#3ecf8e' : '#ff4d4f';
-  ctx.fillText('YOU  ' + (profit >= 0 ? '+' : '-') + '$' + Math.abs(Math.round(profit)).toLocaleString(), x + 64, y + 37);
-  if (streak >= 3) { ctx.fillStyle = '#ff9f1c'; ctx.fillText('🔥' + streak, x + boxW - 54, y + 37); }
-  // 盾牌數量和個人最佳紀錄
-  ctx.fillStyle = 'rgba(10,12,18,0.85)'; ctx.fillRect(x, y + 48, boxW, 26);
-  ctx.font = '14px system-ui'; ctx.fillStyle = shieldArmed ? '#7ec8ff' : '#9aa0a6';
-  ctx.fillText('🛡'.repeat(shields) + (shieldArmed ? '  ON' : '') + (shields === 0 && !shieldArmed ? 'no shields' : ''), x + 8, y + 66);
-  const best = bestScore();
-  ctx.fillStyle = '#f5c542';
-  if (!isNaN(best)) ctx.fillText('BEST ' + (best >= 0 ? '+' : '-') + '$' + Math.abs(best).toLocaleString(), x + boxW - 120, y + 66);
+  ctx.font = 'bold 16px system-ui';
+  const text = times[lastIndex] + '  ·  ' + (lastIndex + 1) + '/' + prices.length;
+  const boxW = 70 + ctx.measureText(text).width + 14, x = W - boxW - 10, y = 10;
+  ctx.fillStyle = 'rgba(10,12,18,0.85)'; ctx.fillRect(x, y, boxW, 32);
+  ctx.fillStyle = '#d93a3a'; ctx.fillRect(x, y, 64, 32);
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(Math.floor(t / 500) % 2 ? '● LIVE' : '  LIVE', x + 6, y + 22);
+  ctx.fillStyle = '#cfd6e4';
+  ctx.fillText(text, x + 74, y + 22);
+  if (streak >= 3) { ctx.fillStyle = '#ff9f1c'; ctx.fillText('🔥 ' + streak, x - 54, y + 22); }
 }
 
 // 畫一個像素風的交易員
