@@ -59,6 +59,7 @@
       <div><b style="color:#7ec8ff">Speed + cymbals = volatility.</b> The faster it plays and the more cymbals you hear, the more violently the price is moving.</div>
       <div><b style="color:#3ecf8e">Pitch, heartbeat, layers = trend strength.</b> A strong rally climbs higher with denser bells; a deep sell-off has a faster heartbeat.</div>
       <div><b style="color:#ff6b6b">Sound effects = sudden spikes.</b> Whoosh + ding = jumped up in one minute. Whoosh + boom = crashed. Thunder = a huge spike.</div>
+      <div><b>Quick reversals:</b> a short "beep-beep" going up or down = the price briefly jumped against the trend (the line turns that colour for a moment, the music keeps the trend).</div>
       <div><b>Line colours:</b> <span style="color:#f5c542">gold = rising</span> · <span style="color:#ff4d4f">red = falling</span> ·
         <span style="color:#b37feb">purple = big jumps but no clear direction</span> · <span style="color:#8a93a6">grey = calm</span></div>
     </div>
@@ -400,6 +401,39 @@ function analyse() {
 
   computeSpikes();
   computeWarnings();
+  fixSharpReversals();
+}
+
+// 修正「趨勢中的急轉彎」：
+// 情緒是看一小段時間的整體方向，所以上漲趨勢中突然急跌一下，還是會被算成「上漲」（黃色）。
+// 這裡把「跟目前情緒方向相反、而且幅度明顯（累積超過一般一步的 2 倍）」的連續幾步，在圖上改成實際的方向。
+// 背景音樂（moods）不跟著切換，不然音樂會一直跳來跳去；改成在那一刻播一個短短的「急轉」音效。
+let lineMoods = [];      // 圖表上色用（包含急轉彎）
+let reversal = [];       // 這一步是不是急轉彎的開始：'up' / 'down' / null
+function fixSharpReversals() {
+  lineMoods = moods.slice();
+  reversal = prices.map(() => null);
+  const steps = prices.map((p, i) => (i === 0 ? 0 : Math.abs(p - prices[i - 1]))).sort((a, b) => a - b);
+  const normal = steps[Math.floor(steps.length / 2)] || 1e-9;
+  // 回放：第 i 步的顏色畫的是 i → i+1 這段線，所以看「下一步」怎麼走
+  // 即時（看不到未來）：只能看 i-1 → i 這一步
+  const move = i => causalMode ? (i > 0 ? prices[i] - prices[i - 1] : 0)
+                               : (i < prices.length - 1 ? prices[i + 1] - prices[i] : 0);
+  const against = i => (moods[i] === 'heaven' && move(i) < 0) || (moods[i] === 'horror' && move(i) > 0);
+
+  let i = 0;
+  while (i < prices.length) {
+    if (!against(i)) { i++; continue; }
+    // 找出一整段連續的「反方向」
+    const start = i, mood = moods[i];
+    let total = 0;
+    while (i < prices.length && moods[i] === mood && against(i)) { total += Math.abs(move(i)); i++; }
+    if (total > 2 * normal) {
+      const actual = mood === 'heaven' ? 'horror' : 'heaven';
+      for (let k = start; k < i; k++) lineMoods[k] = actual;
+      reversal[start] = actual === 'heaven' ? 'up' : 'down';
+    }
+  }
 }
 
 function computeWarnings() {
@@ -439,8 +473,9 @@ const CHOPPY_COLOR = '#b37feb';   // 紫色：沒有明確方向，但上下跳�
 
 // 每一段線要用什麼顏色
 function lineColor(i) {
-  if (moods[i] === 'calm' && (spikes[i] || spikes[i + 1] || (storm[i] || 0) > 0.35)) return CHOPPY_COLOR;
-  return MOOD_COLORS[moods[i]] || '#8a93a6';
+  const mood = lineMoods[i] || moods[i];
+  if (mood === 'calm' && (spikes[i] || spikes[i + 1] || (storm[i] || 0) > 0.35)) return CHOPPY_COLOR;
+  return MOOD_COLORS[mood] || '#8a93a6';
 }
 const chart = new Chart(document.getElementById('chart'), {
   type: 'line',
@@ -520,6 +555,10 @@ const midi = n => Tone.Frequency(n, 'midi').toNote();   // MIDI 編號 → 音�
 // 暴跌：炸彈掉下來的「咻～～」往下 + 「轟！」
 // 特別大的暴衝（超過一般的 25 倍）：再加一聲打雷
 let lastSpikeStep = -1;
+let lastReversalStep = -1;
+const blip = new Tone.Synth({ oscillator: { type: 'square' },
+  envelope: { attack: 0.001, decay: 0.08, sustain: 0, release: 0.05 } }).connect(musicBus);
+blip.volume.value = -18;
 let spikeScale = 1;
 const whoosh = new Tone.Synth({ oscillator: { type: 'sine' },
   envelope: { attack: 0.01, decay: 0.1, sustain: 0.8, release: 0.1 } }).toDestination();
@@ -648,6 +687,14 @@ function onTick(time) {
     }
   }
 
+  // 急轉彎音效：趨勢中突然反方向走一下 →「嘟嘟↑」或「嘟嘟↓」（比暴衝小聲）
+  if (reversal[step] && step !== lastReversalStep && !spikes[step]) {
+    lastReversalStep = step;
+    const notes = reversal[step] === 'up' ? ['C6', 'G6'] : ['G4', 'C4'];
+    blip.triggerAttackRelease(notes[0], '32n', time);
+    blip.triggerAttackRelease(notes[1], '32n', time + 0.08);
+  }
+
   // 暴衝音效：每一個暴衝只在第一次播到時響一次
   if (spikes[step] && step !== lastSpikeStep) {
     lastSpikeStep = step;
@@ -735,6 +782,7 @@ async function play() {
   tick = 0;
   finishing = false;
   lastSpikeStep = -1;
+  lastReversalStep = -1;
   Tone.Transport.bpm.value = 76;
   loopId = Tone.Transport.scheduleRepeat(onTick, '16n');
   Tone.Transport.start();
@@ -821,6 +869,7 @@ function pickSegment() {
       prices = cut(prices); ranges = cut(ranges); times = cut(times);
       moods = cut(moods); intensity = cut(intensity); storm = cut(storm);
       stormRatio = cut(stormRatio); warnLevel = cut(warnLevel);
+      lineMoods = cut(lineMoods); reversal = cut(reversal);
       // 暴衝：要同時「以整天來看很大」和「以這一段來看也很大」才算，免得劇烈時段一直響
       const dayWide = cut(spikes);
       computeSpikes();

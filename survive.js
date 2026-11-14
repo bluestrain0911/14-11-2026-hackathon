@@ -129,6 +129,7 @@ function startSurvival() {
   prices = cut(prices); ranges = cut(ranges); times = cut(times);
   moods = cut(moods); intensity = cut(intensity); storm = cut(storm);
   stormRatio = cut(stormRatio); warnLevel = cut(warnLevel);
+  lineMoods = cut(lineMoods); reversal = cut(reversal);
   computeSpikes();     // 暴衝用「這一局」的標準重新算，不然風暴時段會一直響
 
   money = START_MONEY; peakMoney = START_MONEY; position = 0; lastIndex = -1;
