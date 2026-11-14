@@ -837,13 +837,7 @@ function onTick(time) {
 }
 
 function onTickInner(time) {
-  if (step >= prices.length) {
-    if (!finishing) {
-      finishing = true;
-      Tone.Draw.schedule(() => { stop(); if (onFinished) onFinished(); }, time);
-    }
-    return;
-  }
+  if (step >= prices.length) return;     // 播完了（結束由下面的「前進計時器」處理）
 
   // ===== 決定情緒，並彈出長音 =====
   // 每一小節的開頭會重新彈一次；如果情緒在小節中間變了，就在下一拍（最多等 3 步）立刻切換，
@@ -918,7 +912,7 @@ function onTickInner(time) {
     lastSpikeStep = step;
     playSpike(spikes[step], time);
     const pips = spikes[step];
-    Tone.Draw.schedule(() => showSpike(pips), time);
+    setTimeout(() => showSpike(pips), 0);
   }
 
   // 波動很大時，不管什麼情緒都加上急促的鈸聲
@@ -927,15 +921,32 @@ function onTickInner(time) {
   // 即時模式：資料由 live.js 自己的計時器送進來，畫面也由它更新；這裡只負責「照目前的資料演奏音樂」
   if (typeof liveActive !== 'undefined' && liveActive) { tick = (tick + 1) % 16; return; }
 
-  // 更新畫面（Tone.Draw 讓畫面和聲音同步）
-  const i = step;
-  Tone.Draw.schedule(() => updateScreen(i), time);
-
-  // 每隔幾個 16 分音符才前進一筆資料（越大，橘點走得越慢）
-  const speedId = typeof surviving !== 'undefined' && surviving ? 'surviveSpeed' : 'speedSelect';
-  const every = Number(document.getElementById(speedId).value);
-  if (tick % every === every - 1) step++;
+  // 資料前進和畫面更新由下面的「前進計時器」負責，這裡只演奏目前這一步的音樂
   tick = (tick + 1) % 16;
+}
+
+// ===== 前進計時器（回放／猜猜樂／生存遊戲）=====
+// 以前資料是跟著音效引擎的時鐘前進，音效引擎一卡，整個遊戲就停在那一步。
+// 現在改用一般的計時器推進：就算聲音出問題，圖表和遊戲也會照常往前走。
+let stepTimer = null;
+function stepLoop() {
+  stepTimer = null;
+  if (loopId === null) return;                                   // 已經停止
+  if (typeof liveActive !== 'undefined' && liveActive) return;   // 即時模式由 live.js 自己推進
+  const isPaused = typeof paused !== 'undefined' && paused;
+  if (!isPaused) {
+    if (step >= prices.length) {
+      if (!finishing) { finishing = true; stop(); if (onFinished) onFinished(); }
+      return;
+    }
+    updateScreen(step);
+    step++;
+  }
+  // 每一步的長度 = 幾個 16 分音符（速度選單），音樂越激烈（bpm 越快）走得越快
+  const speedId = typeof surviving !== 'undefined' && surviving ? 'surviveSpeed' : 'speedSelect';
+  const every = Number(document.getElementById(speedId).value) || 4;
+  const bpm = Math.max(40, Math.min(200, Tone.Transport.bpm.value || 76));
+  stepTimer = setTimeout(stepLoop, every * 60000 / (bpm * 4));
 }
 
 const MOOD_STYLE = {
@@ -1043,12 +1054,15 @@ async function play() {
   Tone.Transport.bpm.value = 76;
   loopId = Tone.Transport.scheduleRepeat(onTick, '16n');
   Tone.Transport.start();
+  clearTimeout(stepTimer);
+  stepTimer = setTimeout(stepLoop, 30);
   document.body.classList.add('playing');            // 讓左上角的等化器動起來
   document.getElementById('playBtn').disabled = true;
   document.getElementById('stopBtn').disabled = false;
 }
 
 function stop() {
+  clearTimeout(stepTimer); stepTimer = null;
   Tone.Transport.stop();
   if (loopId !== null) { Tone.Transport.clear(loopId); loopId = null; }
   pad.releaseAll(); drone.releaseAll(); eerie.triggerRelease();   // 把還在響的長音關掉
