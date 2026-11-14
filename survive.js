@@ -12,6 +12,8 @@
 const START_MONEY = 10000;
 const NOTIONAL = 1000000;        // 每次交易 100 萬歐元
 const SWITCH_COST = 20;          // 每次換方向的手續費（買賣價差，約 0.2 pip）
+const HISTORY_SHARE = 0.9;       // 圖表的前 90% 是「已經發生的歷史」，玩家從 90% 的位置開始交易到 100%
+let playOffset = 0;              // 玩家從第幾筆開始交易（前面都是歷史）
 const GAME_STEPS = 120;          // 一局播幾步（幾分鐘的資料），慢速下大約 1.5 分鐘
 
 let surviving = false;           // 是否正在玩生存模式
@@ -119,13 +121,25 @@ function bestScore() {
 function startSurvival() {
   // 隨機挑一天，從「最劇烈的時刻」之前 40～100 分鐘開始，確保一定會遇到風暴
   const names = Object.keys(datasets).filter(name => !name.startsWith('Demo'));
-  const data = datasets[names[Math.floor(Math.random() * names.length)]];
-  prices = data.c.slice(); ranges = data.h.map((h, k) => h - data.l[k]); times = data.t.slice();
-  analyse();                                   // 用整天的資料判斷情緒，標準才一致
-  let peak = 0;
-  ranges.forEach((r, k) => { if (r > ranges[peak]) peak = k; });
+  // 只選完整的交易日（週日只有晚上幾小時，太短），而且不選第一天，因為要接前一天當歷史
+  const candidates = names.map((name, k) => k).filter(k => k > 0 && datasets[names[k]].c.length >= 600);
+  const dayIndex = candidates[Math.floor(Math.random() * candidates.length)];
+  const data = datasets[names[dayIndex]];
+  const previous = datasets[names[dayIndex - 1]];
+  // 把「前一個交易日」接在前面，這樣不管風暴在幾點，都有足夠的歷史可以畫滿前 90%
+  prices = previous.c.concat(data.c);
+  ranges = previous.h.map((h, k) => h - previous.l[k]).concat(data.h.map((h, k) => h - data.l[k]));
+  times = previous.t.map(t => 'prev ' + t).concat(data.t);
+  analyse();                                   // 用整段資料判斷情緒，標準才一致
+  const todayStart = previous.c.length;
+  let peak = todayStart;                      // 風暴一定挑「今天」的
+  ranges.forEach((r, k) => { if (k >= todayStart && r > ranges[peak]) peak = k; });
   const start = Math.max(0, Math.min(prices.length - GAME_STEPS, peak - 40 - Math.floor(Math.random() * 60)));
-  const cut = arr => arr.slice(start, start + GAME_STEPS);
+  // 前面接上「歷史」：讓交易的這一段大約佔整張圖的最後 10%
+  const historyLength = Math.round(GAME_STEPS * HISTORY_SHARE / (1 - HISTORY_SHARE));
+  const historyStart = Math.max(0, start - historyLength);
+  playOffset = start - historyStart;
+  const cut = arr => arr.slice(historyStart, start + GAME_STEPS);
   prices = cut(prices); ranges = cut(ranges); times = cut(times);
   moods = cut(moods); intensity = cut(intensity); storm = cut(storm);
   stormRatio = cut(stormRatio); warnLevel = cut(warnLevel);
@@ -141,12 +155,20 @@ function startSurvival() {
   lastMood = 'calm'; gameOver = false; particles = []; popups = [];
   surviving = true;
   drawChart();
-  chart.data.datasets[0].data = prices.map(() => null);   // 圖表先清空，跟著時間慢慢畫出來
+  // 歷史部分直接畫出來（灰色虛線），交易的部分跟著時間慢慢畫出來（依照情緒上色）
+  chart.data.datasets[0].data = prices.map((p, k) => (k <= playOffset ? p : null));
+  chart.data.datasets[0].segment = {
+    borderColor: ctx => ctx.p0DataIndex < playOffset ? '#5d6475' : (MOOD_COLORS[moods[ctx.p0DataIndex]] || '#8a93a6'),
+    borderDash: ctx => ctx.p0DataIndex < playOffset ? [4, 4] : undefined
+  };
   chart.update();
   updateStats();
   document.getElementById('surviveStart').classList.add('hidden');
   document.getElementById('narratorText').textContent = '';
-  step = 0;
+  step = playOffset;                           // 從 90% 的位置開始
+  document.getElementById('surviveMessage').textContent =
+    'The grey dashed line is what already happened today (' + times[0] + '–' + times[playOffset] +
+    '). You trade from ' + times[playOffset] + ' — the last 10% of the chart.';
   onFinished = endSurvival;
   paused = false;
   // 先倒數 3 秒，讓玩家準備好，再開始播
@@ -159,7 +181,7 @@ function startSurvival() {
   setTimeout(() => {
     if (!surviving) return;
     play();
-    narrate('kickoff', { time: times[0] }, true);
+    narrate('kickoff', { time: times[playOffset] }, true);
   }, 3000);
 }
 
@@ -174,7 +196,7 @@ document.getElementById('pauseBtn').addEventListener('click', togglePause);
 
 // ---------- 每走一步（由主程式的 updateScreen 呼叫） ----------
 function surviveStep(i) {
-  if (!surviving || gameOver) return;
+  if (!surviving || gameOver || i < playOffset) return;   // 歷史的部分不用算錢
 
   // 圖表只畫到現在
   chart.data.datasets[0].data = prices.map((p, k) => (k <= i ? p : null));
@@ -336,11 +358,11 @@ function matchStats(brokeOut) {
   const sorted = trades.slice().sort((a, b) => b.pnl - a.pnl);
   return {
     day: document.getElementById('surviveDay')?.textContent || '',
-    from: times[0], to: times[times.length - 1],
+    from: times[playOffset], to: times[times.length - 1],
     finalBalance: Math.round(money), profit: Math.round(money - START_MONEY),
     wentBroke: brokeOut,
     trades: trades.length, bestTrade: sorted[0] || null, worstTrade: sorted[sorted.length - 1] || null,
-    followedMusicPercent: Math.round(alignedSteps / Math.max(1, lastIndex + 1) * 100),
+    followedMusicPercent: Math.round(alignedSteps / Math.max(1, lastIndex - playOffset + 1) * 100),
     shieldsUsed: 3 - shields, shieldSaves: shieldSaves, goals: goals, bigLosses: groans,
     stormWarnings: warningsSeen, stormWarningsProtected: warningsProtected, lossLimit: shieldLimit(),
     lowestBalance: Math.round(lowestMoney),
@@ -582,7 +604,7 @@ function drawScoreboard(W, t) {
   ctx.fillStyle = '#ffffff'; ctx.font = 'bold 14px system-ui';
   ctx.fillText(Math.floor(t / 500) % 2 ? '● LIVE' : '  LIVE', x + 4, y + 27);
   ctx.font = 'bold 13px system-ui'; ctx.fillStyle = '#9aa0a6';
-  ctx.fillText(times[lastIndex] + '  ·  MIN ' + (lastIndex + 1) + '/' + prices.length, x + 64, y + 17);
+  ctx.fillText(times[lastIndex] + '  ·  MIN ' + (lastIndex - playOffset + 1) + '/' + (prices.length - playOffset), x + 64, y + 17);
   const profit = money - START_MONEY;
   ctx.font = 'bold 18px system-ui'; ctx.fillStyle = profit >= 0 ? '#3ecf8e' : '#ff4d4f';
   ctx.fillText('YOU  ' + (profit >= 0 ? '+' : '-') + '$' + Math.abs(Math.round(profit)).toLocaleString(), x + 64, y + 37);
