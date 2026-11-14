@@ -116,6 +116,14 @@
   .legend-items { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; font-size: 14px; color: var(--text); }
   .legend-note { font-size: 12px; margin-top: 8px; }
 
+  /* 生存模式：左邊是交易員，右邊是走勢圖，一個畫面就看得完 */
+  body.mode-survive { max-width: 1440px; }
+  body.mode-survive .workspace { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+                                 gap: 16px; align-items: start; margin-top: 16px; }
+  body.mode-survive .workspace > .game { margin: 0; }
+  body.mode-survive .chart-box { position: sticky; top: 12px; }
+  @media (max-width: 900px) { body.mode-survive .workspace { display: block; } }
+
   .hidden { display: none !important; }
 
   @media (max-width: 640px) {
@@ -152,6 +160,44 @@
 
 
 
+  <!-- 即時監控模式（用歷史資料模擬） -->
+  <div id="livePanel" class="game hidden">
+    <div style="font-size:14px; color:#9aa0a6; margin-bottom:8px;">
+      Simulated live feed: the first 90% of the data is shown as history, then the last 10% arrives one minute at a time,
+      like a live market. Leave it running in the
+      background — the music, storm warnings and the browser tab title tell you when something happens.
+      <b style="color:#e8e8e8">The FX market is closed at weekends, so this demo replays a real trading day.</b>
+    </div>
+    <div class="controls" style="margin:8px 0;">
+      <label>Data <select id="liveDay"></select></label>
+      <select id="liveSpeed">
+        <option value="60000">1 market minute = 1 minute (real time)</option>
+        <option value="5000" selected>1 market minute = 5 seconds (demo)</option>
+        <option value="1500">1 market minute = 1.5 seconds (fast)</option>
+        <option value="200">1 market minute = 0.2 seconds (turbo)</option>
+      </select>
+      <select id="liveView">
+        <option value="recent" selected>Chart: last 4 hours (zoomed)</option>
+        <option value="full">Chart: full history</option>
+      </select>
+      <select id="bgMode">
+        <option value="continuous">🎵 Continuous music</option>
+        <option value="ambient">🌙 Ambient (quiet until something happens)</option>
+        <option value="alerts">🔕 Alerts only (silent, short cues)</option>
+      </select>
+      <select id="heartbeat">
+        <option value="0">Heartbeat ping: off</option>
+        <option value="60000">Heartbeat ping: every minute</option>
+        <option value="900000">Heartbeat ping: every 15 minutes</option>
+      </select>
+      <button id="liveStartBtn">▶ Start monitoring</button>
+      <button id="liveStopBtn" style="background:#262a33">■ Stop</button>
+      <button id="outageBtn" style="background:#4a5263">🔌 Simulate feed outage</button>
+    </div>
+    <div id="liveStatus" class="feedback">Not running.</div>
+  </div>
+
+  <div class="workspace">
   <!-- 生存模式：交易員小遊戲 -->
   <div id="survivePanel" class="game hidden">
     <canvas id="stage" width="720" height="240" style="width:100%; border-radius:10px; display:block;"></canvas>
@@ -222,42 +268,7 @@
   </div>
 
   <!-- 遊戲面板 -->
-  <!-- 即時監控模式（用歷史資料模擬） -->
-  <div id="livePanel" class="game hidden">
-    <div style="font-size:14px; color:#9aa0a6; margin-bottom:8px;">
-      Simulated live feed: the first 90% of the data is shown as history, then the last 10% arrives one minute at a time,
-      like a live market. Leave it running in the
-      background — the music, storm warnings and the browser tab title tell you when something happens.
-      <b style="color:#e8e8e8">The FX market is closed at weekends, so this demo replays a real trading day.</b>
-    </div>
-    <div class="controls" style="margin:8px 0;">
-      <label>Data <select id="liveDay"></select></label>
-      <select id="liveSpeed">
-        <option value="60000">1 market minute = 1 minute (real time)</option>
-        <option value="5000" selected>1 market minute = 5 seconds (demo)</option>
-        <option value="1500">1 market minute = 1.5 seconds (fast)</option>
-        <option value="200">1 market minute = 0.2 seconds (turbo)</option>
-      </select>
-      <select id="liveView">
-        <option value="recent" selected>Chart: last 4 hours (zoomed)</option>
-        <option value="full">Chart: full history</option>
-      </select>
-      <select id="bgMode">
-        <option value="continuous">🎵 Continuous music</option>
-        <option value="ambient">🌙 Ambient (quiet until something happens)</option>
-        <option value="alerts">🔕 Alerts only (silent, short cues)</option>
-      </select>
-      <select id="heartbeat">
-        <option value="0">Heartbeat ping: off</option>
-        <option value="60000">Heartbeat ping: every minute</option>
-        <option value="900000">Heartbeat ping: every 15 minutes</option>
-      </select>
-      <button id="liveStartBtn">▶ Start monitoring</button>
-      <button id="liveStopBtn" style="background:#262a33">■ Stop</button>
-      <button id="outageBtn" style="background:#4a5263">🔌 Simulate feed outage</button>
-    </div>
-    <div id="liveStatus" class="feedback">Not running.</div>
-  </div>
+  </div><!-- /workspace -->
 
   <div id="gamePanel" class="game hidden">
     <div id="roundText">Round 1 / 5 · Score 0</div>
@@ -1106,6 +1117,7 @@ function showMode(mode) {
   document.getElementById('cover').classList.add('hidden');
   hideAnswer = false;
   document.body.style.background = '#0d1424';
+  document.body.classList.toggle('mode-survive', mode === 'survive');   // 生存模式：左右並排
 
   if (mode === 'game') {
     round = 0; score = 0; answer = null;
