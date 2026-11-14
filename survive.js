@@ -502,22 +502,23 @@ function drawStage(t) {
     ctx.globalAlpha = Math.max(0, p.life);
     ctx.fillStyle = p.color;
     if (p.big) {                                   // 進球、失球：大字置中
-      ctx.font = 'bold 44px system-ui'; ctx.textAlign = 'center';
+      ctx.font = 'bold ' + Math.round(Math.min(44, W / 11)) + 'px system-ui'; ctx.textAlign = 'center';
       ctx.fillText(p.text, W / 2, H / 2 - 20 - p.y * 0.3);
       ctx.textAlign = 'left';
     } else {
-      ctx.font = 'bold 22px system-ui';
-      ctx.fillText(p.text, W / 2 + 60, H / 2 - p.y);
+      ctx.font = 'bold 18px system-ui'; ctx.textAlign = 'center';
+      ctx.fillText(p.text, W / 2, H / 2 - 40 - p.y);
+      ctx.textAlign = 'left';
     }
     ctx.globalAlpha = 1;
   });
 
   // 提示：告訴新手「現在的音樂代表什麼、可以怎麼做」
   if (surviving && !gameOver && document.getElementById('hintsOn').checked && performance.now() > countdownEnd) {
-    const hint = mood === 'heaven' ? '♪ Heaven music → price is rising → try ⬆ Buy'
-               : mood === 'horror' ? '♪ Horror music → price is falling → try ⬇ Sell'
-               : '♪ Calm music → price is flat → stay in 💵 Cash';
-    ctx.font = 'bold 16px system-ui';
+    const hint = mood === 'heaven' ? '♪ Heaven = rising → ⬆ Buy'
+               : mood === 'horror' ? '♪ Horror = falling → ⬇ Sell'
+               : '♪ Calm = flat → 💵 Cash';
+    ctx.font = 'bold 14px system-ui';
     ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(10, H - 72, ctx.measureText(hint).width + 20, 28);
     ctx.fillStyle = mood === 'heaven' ? '#f5c542' : mood === 'horror' ? '#ff6b6b' : '#cfd6e4';
     ctx.fillText(hint, 20, H - 52);
@@ -531,15 +532,15 @@ function drawStage(t) {
   if (warn > 0) {
     const flash = Math.floor(t / 400) % 2 === 0;
     ctx.fillStyle = warn === 2 ? (flash ? '#ff4d4f' : '#a3262a') : '#faad14';
-    ctx.fillRect(10, 10, 330, 30);
-    ctx.fillStyle = warn === 2 ? '#ffffff' : '#3a2e00'; ctx.font = 'bold 15px system-ui';
-    ctx.fillText((warn === 2 ? '🔴 STORM WARNING' : '🟡 Storm brewing') + ' · volatility ' +
-                 stormRatio[lastIndex].toFixed(1) + '× normal', 18, 30);
+    const warnW = Math.min(330, W - 20);
+    ctx.fillRect(10, 86, warnW, 28);
+    ctx.fillStyle = warn === 2 ? '#ffffff' : '#3a2e00'; ctx.font = 'bold 13px system-ui';
+    ctx.fillText((warn === 2 ? '🔴 STORM ' : '🟡 Storm brewing ') + stormRatio[lastIndex].toFixed(1) + '× normal', 18, 105);
     if (performance.now() < promptUntil && position !== 0 && !shieldArmed) {
-      ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(10, 42, 330, 30);
-      ctx.fillStyle = '#7ec8ff'; ctx.font = 'bold 14px system-ui';
-      ctx.fillText(shields > 0 ? '🛡 Protect this trade? Press E (max loss $' + shieldLimit() + ')'
-                               : '⚠️ No shields left — press Space to go to cash', 18, 62);
+      ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(10, 116, warnW, 28);
+      ctx.fillStyle = '#7ec8ff'; ctx.font = 'bold 13px system-ui';
+      ctx.fillText(shields > 0 ? '🛡 Protect? Press E (max -$' + shieldLimit() + ')'
+                               : '⚠️ No shields — Space = cash', 18, 135);
     }
   }
 
@@ -549,7 +550,9 @@ function drawStage(t) {
     ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center';
     ctx.font = 'bold 72px system-ui'; ctx.fillText(String(Math.ceil(left / 1000)), W / 2, H / 2 + 10);
-    ctx.font = '16px system-ui'; ctx.fillText('W/⬆ Buy · S/⬇ Sell · Space Cash · E Shield · B Status · P Pause', W / 2, H / 2 + 50);
+    ctx.font = '13px system-ui';
+    ctx.fillText('W/⬆ Buy · S/⬇ Sell · Space Cash', W / 2, H / 2 + 46);
+    ctx.fillText('E Shield · B Status · P Pause', W / 2, H / 2 + 66);
     ctx.textAlign = 'left';
   }
 
@@ -563,9 +566,9 @@ function drawStage(t) {
   // 輸光畫面
   if (gameOver && money <= 0) {
     ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = '#ff4d4f'; ctx.font = 'bold 44px system-ui'; ctx.textAlign = 'center';
+    ctx.fillStyle = '#ff4d4f'; ctx.font = 'bold ' + Math.round(Math.min(44, W / 10)) + 'px system-ui'; ctx.textAlign = 'center';
     ctx.fillText('MARGIN CALL', W / 2, H / 2);
-    ctx.font = '18px system-ui'; ctx.fillStyle = '#e8e8e8';
+    ctx.font = '14px system-ui'; ctx.fillStyle = '#e8e8e8';
     ctx.fillText('The bank has taken your lunch money', W / 2, H / 2 + 30);
     ctx.textAlign = 'left';
   }
@@ -577,8 +580,8 @@ function drawStage(t) {
 
 // 電視轉播風格的計分板
 function drawScoreboard(W, t) {
-  const x = W - 300, y = 10;
-  ctx.fillStyle = 'rgba(10,12,18,0.85)'; ctx.fillRect(x, y, 290, 44);
+  const boxW = Math.min(290, W - 20), x = W - boxW - 10, y = 10;
+  ctx.fillStyle = 'rgba(10,12,18,0.85)'; ctx.fillRect(x, y, boxW, 44);
   ctx.fillStyle = '#d93a3a'; ctx.fillRect(x, y, 56, 44);
   ctx.fillStyle = '#ffffff'; ctx.font = 'bold 14px system-ui';
   ctx.fillText(Math.floor(t / 500) % 2 ? '● LIVE' : '  LIVE', x + 4, y + 27);
@@ -587,14 +590,14 @@ function drawScoreboard(W, t) {
   const profit = money - START_MONEY;
   ctx.font = 'bold 18px system-ui'; ctx.fillStyle = profit >= 0 ? '#3ecf8e' : '#ff4d4f';
   ctx.fillText('YOU  ' + (profit >= 0 ? '+' : '-') + '$' + Math.abs(Math.round(profit)).toLocaleString(), x + 64, y + 37);
-  if (streak >= 3) { ctx.fillStyle = '#ff9f1c'; ctx.fillText('🔥' + streak, x + 236, y + 37); }
+  if (streak >= 3) { ctx.fillStyle = '#ff9f1c'; ctx.fillText('🔥' + streak, x + boxW - 54, y + 37); }
   // 盾牌數量和個人最佳紀錄
-  ctx.fillStyle = 'rgba(10,12,18,0.85)'; ctx.fillRect(x, y + 48, 290, 26);
+  ctx.fillStyle = 'rgba(10,12,18,0.85)'; ctx.fillRect(x, y + 48, boxW, 26);
   ctx.font = '14px system-ui'; ctx.fillStyle = shieldArmed ? '#7ec8ff' : '#9aa0a6';
   ctx.fillText('🛡'.repeat(shields) + (shieldArmed ? '  ON' : '') + (shields === 0 && !shieldArmed ? 'no shields' : ''), x + 8, y + 66);
   const best = bestScore();
   ctx.fillStyle = '#f5c542';
-  if (!isNaN(best)) ctx.fillText('BEST ' + (best >= 0 ? '+' : '-') + '$' + Math.abs(best).toLocaleString(), x + 170, y + 66);
+  if (!isNaN(best)) ctx.fillText('BEST ' + (best >= 0 ? '+' : '-') + '$' + Math.abs(best).toLocaleString(), x + boxW - 120, y + 66);
 }
 
 // 畫一個像素風的交易員

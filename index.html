@@ -116,13 +116,23 @@
   .legend-items { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; font-size: 14px; color: var(--text); }
   .legend-note { font-size: 12px; margin-top: 8px; }
 
-  /* 生存模式：左邊是交易員，右邊是走勢圖，一個畫面就看得完 */
+  /* 生存模式：走勢圖是主角（左邊、大），交易員在右邊當配角，按鈕在下面 */
+  .survive-stats { grid-template-columns: repeat(4, 1fr); margin-top: 12px; }
   body.mode-survive { max-width: 1440px; }
-  body.mode-survive .workspace { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  body.mode-survive .workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+                                 grid-template-areas: "chart side" "controls controls";
                                  gap: 16px; align-items: start; margin-top: 16px; }
-  body.mode-survive .workspace > .game { margin: 0; }
-  body.mode-survive .chart-box { position: sticky; top: 12px; }
-  @media (max-width: 640px) { body.mode-survive .workspace { display: block; } }
+  body.mode-survive #survivePanel { display: contents; }
+  body.mode-survive .chart-box { grid-area: chart; }
+  body.mode-survive .survive-side { grid-area: side; background: var(--panel); border: 1px solid var(--line);
+                                    border-radius: 18px; padding: 12px; }
+  body.mode-survive .survive-stats { grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+  body.mode-survive .survive-stats .card b { font-size: 16px; }
+  body.mode-survive .survive-controls { grid-area: controls; background: var(--panel); border: 1px solid var(--line);
+                                        border-radius: 18px; padding: 6px 18px 14px; }
+  @media (max-width: 760px) {
+    body.mode-survive .workspace { grid-template-columns: 1fr; grid-template-areas: "chart" "side" "controls"; }
+  }
 
   .hidden { display: none !important; }
 
@@ -200,13 +210,18 @@
   <div class="workspace">
   <!-- 生存模式：交易員小遊戲 -->
   <div id="survivePanel" class="game hidden">
-    <canvas id="stage" width="720" height="240" style="width:100%; border-radius:10px; display:block;"></canvas>
-    <div class="info" style="grid-template-columns: repeat(4, 1fr); margin-top: 12px;">
-      <div class="card">Money<b id="moneyText">$10,000</b></div>
-      <div class="card">Profit<b id="profitText">+$0</b></div>
-      <div class="card">Position<b id="positionText">💵 Cash (safe)</b></div>
-      <div class="card">Shields<b id="shieldText">3 left</b></div>
+    <!-- 右邊的小欄：交易員 + 數字 -->
+    <div class="survive-side">
+      <canvas id="stage" width="420" height="340" style="width:100%; border-radius:12px; display:block;"></canvas>
+      <div class="info survive-stats">
+        <div class="card">Money<b id="moneyText">$10,000</b></div>
+        <div class="card">Profit<b id="profitText">+$0</b></div>
+        <div class="card">Position<b id="positionText">💵 Cash (safe)</b></div>
+        <div class="card">Shields<b id="shieldText">3 left</b></div>
+      </div>
     </div>
+    <!-- 下方：按鈕和設定 -->
+    <div class="survive-controls">
     <div class="answers">
       <button id="buyBtn" style="background:#b8901c">⬆ Buy (W)</button>
       <button id="cashBtn" style="background:#4a5263">💵 Cash (Space)</button>
@@ -243,6 +258,7 @@
       <label>Voice ID <input id="elevenVoice" value="21m00Tcm4TlvDq8ikWAM" size="22"></label><br><br>
       <button id="testNarrator">Test narrator</button>
     </details>
+  </div><!-- /survive-controls -->
   </div>
 
   <div class="chart-box">
@@ -1117,7 +1133,8 @@ function showMode(mode) {
   document.getElementById('cover').classList.add('hidden');
   hideAnswer = false;
   document.body.style.background = '#0d1424';
-  document.body.classList.toggle('mode-survive', mode === 'survive');   // 生存模式：左右並排
+  document.body.classList.toggle('mode-survive', mode === 'survive');   // 生存模式：走勢圖為主、交易員在旁邊
+  if (chart.options) { chart.options.aspectRatio = mode === 'survive' ? 2.6 : 2; chart.resize && chart.resize(); }  // 生存模式的圖矮一點，按鈕不會被擠出畫面
 
   if (mode === 'game') {
     round = 0; score = 0; answer = null;
