@@ -189,6 +189,7 @@ function liveStep(i) {
     shown = shownIndex[shownIndex.length - 1] === i ? shownIndex : shownIndex.concat([i]);
   }
   liveShown = shown;
+  fitYAxis(shown.map(k => prices[k]));
   chart.data.labels = shown.map(k => times[k]);
   chart.data.datasets[0].data = shown.map(k => prices[k]);
   const marker = shown.map(() => null);

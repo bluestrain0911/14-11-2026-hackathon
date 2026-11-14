@@ -506,7 +506,21 @@ const chart = new Chart(document.getElementById('chart'), {
     scales: { x: { display: false }, y: { ticks: { color: '#9aa0a6' }, grid: { color: '#2a2e36' } } } }
 });
 
+// 圖表的上下範圍至少要有 10 pip（0.0010）。
+// 不然市場很平靜時，圖表會自動放大，0.0002 的小晃動看起來像大起大落。
+const MIN_SPAN = 0.0010;
+function fitYAxis(values) {
+  const valid = values.filter(v => v != null);
+  if (!valid.length || !chart.options) return;
+  const lo = Math.min(...valid), hi = Math.max(...valid);
+  const span = Math.max(hi - lo, MIN_SPAN) * 1.1;
+  const mid = (hi + lo) / 2;
+  chart.options.scales.y.min = mid - span / 2;
+  chart.options.scales.y.max = mid + span / 2;
+}
+
 function drawChart() {
+  fitYAxis(prices);
   // 恢復成「整段資料」的上色方式（即時模式會把它改成只畫最近 90 分鐘）
   chart.data.datasets[0].segment = { borderColor: ctx => lineColor(ctx.p0DataIndex) };
   chart.data.labels = times;
@@ -959,7 +973,9 @@ function guess(choice) {
   document.getElementById('cover').classList.add('hidden');   // 揭曉圖表
   document.getElementById('feedback').textContent =
     (choice === answer ? '✅ Correct! ' : '❌ Not quite. ') +
-    'The market was ' + ANSWER_TEXT[answer] + ' — ' + times[0] + ' to ' + times[times.length - 1] + '.';
+    'The market was ' + ANSWER_TEXT[answer] + ' — ' + times[0] + ' to ' + times[times.length - 1] +
+    ' (moved ' + ((prices[prices.length - 1] - prices[0]) * 10000).toFixed(1) + ' pips, range ' +
+    ((Math.max(...prices) - Math.min(...prices)) * 10000).toFixed(1) + ' pips).';
   updateRoundText();
   const button = document.getElementById('startRoundBtn');
   button.textContent = round >= ROUNDS ? '▶ Play again (final score ' + score + ' / ' + ROUNDS + ')' : '▶ Next round';
