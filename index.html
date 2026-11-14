@@ -69,6 +69,7 @@
     <button id="replayTab" class="active">Replay</button>
     <button id="gameTab">Guess game</button>
     <button id="surviveTab">Survive the storm</button>
+    <button id="liveTab">Live monitor</button>
   </div>
 
   <!-- 生存模式：交易員小遊戲 -->
@@ -128,6 +129,28 @@
   </div>
 
   <!-- 遊戲面板 -->
+  <!-- 即時監控模式（用歷史資料模擬） -->
+  <div id="livePanel" class="game hidden">
+    <div style="font-size:14px; color:#9aa0a6; margin-bottom:8px;">
+      Simulated live feed: real SGX FX data arrives one minute at a time, like a live market. Leave it running in the
+      background — the music, storm warnings and the browser tab title tell you when something happens.
+      <b style="color:#e8e8e8">The FX market is closed at weekends, so this demo replays a real trading day.</b>
+    </div>
+    <div class="controls" style="margin:8px 0;">
+      <select id="liveDay"></select>
+      <label>Start at <input id="liveStart" type="time" value="12:00"></label>
+      <select id="liveSpeed">
+        <option value="60000">1 market minute = 1 minute (real time)</option>
+        <option value="5000" selected>1 market minute = 5 seconds (demo)</option>
+        <option value="1500">1 market minute = 1.5 seconds (fast)</option>
+      </select>
+      <button id="liveStartBtn">▶ Start monitoring</button>
+      <button id="liveStopBtn" style="background:#262a33">■ Stop</button>
+      <button id="outageBtn" style="background:#4a5263">🔌 Simulate feed outage</button>
+    </div>
+    <div id="liveStatus" class="feedback">Not running.</div>
+  </div>
+
   <div id="gamePanel" class="game hidden">
     <div id="roundText">Round 1 / 5 · Score 0</div>
     <div class="answers">
@@ -278,6 +301,7 @@ function loadData(d) {
 // intensity：情緒有多強烈（0～1）。漲/跌得越多、而且持續越久，數字越大，音效就越深。
 // storm：最近幾筆的「振幅」（最高價 - 最低價）有多大（0～1），用來加鼓和加快速度。
 let moods = [], intensity = [], storm = [];
+let causalMode = false;   // true = 即時模式：只能用過去的資料判斷
 // spikes：一分鐘內突然暴漲或暴跌的時刻。0 = 沒有；正數 = 暴漲；負數 = 暴跌（數字 = 漲跌了幾 pip）
 let spikes = [];
 // 風暴預警（只看過去，不偷看未來）：
@@ -305,7 +329,9 @@ function analyse() {
   prices.forEach((p, i) => {
     // 視窗「以現在為中心」：往前看 6 步、往後看 6 步。
     // 因為播的是歷史資料，未來幾步其實已經知道了，這樣音樂就能在趨勢「剛開始」時就切換，不會慢半拍。
-    const from = Math.max(0, i - W / 2), to = Math.min(prices.length - 1, i + W / 2);
+    // 即時模式（causalMode）看不到未來，只能用過去 12 步判斷，所以音樂會慢一點才切換
+    const from = causalMode ? Math.max(0, i - W) : Math.max(0, i - W / 2);
+    const to = causalMode ? i : Math.min(prices.length - 1, i + W / 2);
     const net = prices[to] - prices[from];
     let path = 0;
     for (let k = from + 1; k <= to; k++) path += Math.abs(prices[k] - prices[k - 1]);
@@ -335,8 +361,10 @@ function analyse() {
     }
   });
   // 「連續 3 步才切換」會讓切換晚 3 步，這裡把結果整體往前挪 3 步抵消掉
-  moods = moods.slice(CONFIRM).concat(Array(CONFIRM).fill(moods[moods.length - 1]));
-  intensity = intensity.slice(CONFIRM).concat(Array(CONFIRM).fill(intensity[intensity.length - 1]));
+  if (!causalMode) {
+    moods = moods.slice(CONFIRM).concat(Array(CONFIRM).fill(moods[moods.length - 1]));
+    intensity = intensity.slice(CONFIRM).concat(Array(CONFIRM).fill(intensity[intensity.length - 1]));
+  }
 
   // --- 風暴：振幅。有最高/最低價就用它，否則用前後兩筆的價差 ---
   const changes = prices.map((p, i) =>
@@ -400,6 +428,8 @@ const chart = new Chart(document.getElementById('chart'), {
 });
 
 function drawChart() {
+  // 恢復成「整段資料」的上色方式（即時模式會把它改成只畫最近 90 分鐘）
+  chart.data.datasets[0].segment = { borderColor: ctx => MOOD_COLORS[moods[ctx.p0DataIndex]] || '#8a93a6' };
   chart.data.labels = times;
   chart.data.datasets[0].data = prices;
   chart.data.datasets[1].data = prices.map(() => null);
@@ -607,7 +637,9 @@ function onTick(time) {
   // 每隔幾個 16 分音符才前進一筆資料（越大，橘點走得越慢）
   const speedId = typeof surviving !== 'undefined' && surviving ? 'surviveSpeed' : 'speedSelect';
   const every = Number(document.getElementById(speedId).value);
-  if (tick % every === every - 1) step++;
+  if (typeof liveActive !== 'undefined' && liveActive) {
+    if (liveShouldAdvance()) step++;          // 即時模式：照真實時間前進（例如每 5 秒一筆）
+  } else if (tick % every === every - 1) step++;
   tick = (tick + 1) % 16;
 }
 
@@ -634,11 +666,14 @@ function showStormBanner(i) {
 
 function updateScreen(i) {
   if (typeof surviving !== 'undefined' && surviving) surviveStep(i);   // 生存模式：算錢、播報、特效
-
-  const marker = prices.map(() => null);
-  marker[i] = prices[i];
-  chart.data.datasets[1].data = marker;
-  chart.update();
+  const live = typeof liveActive !== 'undefined' && liveActive;
+  if (live) liveStep(i);    // 即時監控模式：滾動圖表、警報（它自己畫圖）
+  else {
+    const marker = prices.map(() => null);
+    marker[i] = prices[i];
+    chart.data.datasets[1].data = marker;
+    chart.update();
+  }
 
   if (hideAnswer) return;   // 遊戲中：不能讓畫面洩漏答案
 
@@ -848,13 +883,15 @@ function showMode(mode) {
   stop();
   surviving = false;
   onFinished = null;
-  ['replay', 'game', 'survive'].forEach(name =>
+  if (typeof stopLive === 'function') stopLive();
+  ['replay', 'game', 'survive', 'live'].forEach(name =>
     document.getElementById(name + 'Tab').classList.toggle('active', name === mode));
   document.getElementById('gamePanel').classList.toggle('hidden', mode !== 'game');
   document.getElementById('survivePanel').classList.toggle('hidden', mode !== 'survive');
+  document.getElementById('livePanel').classList.toggle('hidden', mode !== 'live');
   document.getElementById('replayControls').classList.toggle('hidden', mode !== 'replay');
-  document.getElementById('infoCards').classList.toggle('hidden', mode !== 'replay');
-  document.querySelector('.meter').classList.toggle('hidden', mode !== 'replay');
+  document.getElementById('infoCards').classList.toggle('hidden', mode !== 'replay' && mode !== 'live');
+  document.querySelector('.meter').classList.toggle('hidden', mode !== 'replay' && mode !== 'live');
   document.getElementById('cover').classList.add('hidden');
   hideAnswer = false;
   document.body.style.background = '#0f1115';
@@ -871,6 +908,8 @@ function showMode(mode) {
   } else if (mode === 'survive') {
     document.getElementById('surviveStart').textContent = '▶ Start trading';
     document.getElementById('surviveStart').classList.remove('hidden');
+  } else if (mode === 'live') {
+    document.getElementById('liveStatus').textContent = 'Not running. Pick a day and a start time, then press Start.';
   } else {
     loadData(datasets[document.getElementById('datasetSelect').value]);
   }
@@ -878,6 +917,7 @@ function showMode(mode) {
 document.getElementById('replayTab').addEventListener('click', () => showMode('replay'));
 document.getElementById('gameTab').addEventListener('click', () => showMode('game'));
 document.getElementById('surviveTab').addEventListener('click', () => showMode('survive'));
+document.getElementById('liveTab').addEventListener('click', () => showMode('live'));
 
 // 一打開網頁就載入第一份資料
 loadData(datasets[Object.keys(datasets)[0]]);
@@ -886,5 +926,6 @@ loadData(datasets[Object.keys(datasets)[0]]);
 <script src="narrator.js"></script>
 <script src="survive.js"></script>
 <script src="report.js"></script>
+<script src="live.js"></script>
 </body>
 </html>
