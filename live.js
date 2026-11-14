@@ -275,6 +275,13 @@ function liveStep(i) {
 // 每秒檢查一次：資料多久沒更新了？
 function checkFeed() {
   if (!liveActive) return;
+  // 保險：資料計時器如果因為任何原因沒在推進，這裡直接幫它推一步（模擬中斷時除外）
+  if (!outage && performance.now() - lastDataAt > liveInterval() * 1.5 + 1000) {
+    console.warn('Live feed timer was late — advancing it from the checker. step=', step);
+    nextStepAt = 0;
+    try { feedTick(); } catch (e) { console.error('feedTick failed:', e); }
+    clearInterval(feedTimer); feedTimer = setInterval(feedTick, 50);
+  }
   const secondsAgo = (performance.now() - lastDataAt) / 1000;
   const limit = Math.max(8, liveInterval() / 1000 * 3);    // 超過 3 個更新週期沒資料就算中斷
   const status = document.getElementById('liveStatus');

@@ -1042,6 +1042,51 @@ function updateScreenInner(i) {
 // ---------- 7. 按鈕 ----------
 let loopId = null;
 
+// ===== 畫面上的錯誤回報（不用開 F12 也看得到哪裡出錯）=====
+const pageErrors = [];
+function reportError(msg) { try { reportErrorInner(msg); } catch (e) { /* 回報本身不能再出錯 */ } }
+function reportErrorInner(msg) {
+  pageErrors.push(new Date().toLocaleTimeString() + '  ' + msg);
+  if (pageErrors.length > 4) pageErrors.shift();
+  let box = document.getElementById('errorBox');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'errorBox';
+    box.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:60;max-width:60vw;background:#3a0d12;color:#ffd6d6;' +
+      'border:1px solid #ff4d4f;border-radius:10px;padding:8px 12px;font:12px/1.4 monospace;white-space:pre-wrap;cursor:pointer';
+    box.title = 'Click to hide';
+    box.onclick = () => box.style.display = 'none';
+    document.body.appendChild(box);
+  }
+  box.style.display = 'block';
+  box.textContent = '⚠️ Errors (screenshot this for debugging):\n' + pageErrors.join('\n');
+}
+window.addEventListener('error', e => reportError((e.message || 'error') + ' @ ' + (e.filename || '').split('/').pop() + ':' + e.lineno));
+window.addEventListener('unhandledrejection', e => reportError('Promise: ' + (e.reason && (e.reason.message || e.reason))));
+const _consoleError = console.error.bind(console);
+console.error = (...args) => { _consoleError(...args); reportError(args.map(a => a && a.stack ? a.stack.split('\n').slice(0, 2).join(' ') : String(a)).join(' ')); };
+
+// 按 D：顯示診斷資訊（資料、音樂引擎、聲音狀態）
+function diagnostics() {
+  const live = typeof liveActive !== 'undefined' && liveActive;
+  return 'step ' + step + '/' + prices.length + (times[step] ? ' (' + times[step] + ')' : '') +
+    ' · music tick ' + ((performance.now() - lastTickAt) / 1000).toFixed(1) + 's ago' +
+    ' · audio ' + Tone.context.state + ' · transport ' + Tone.Transport.state + ' · bpm ' + Math.round(Tone.Transport.bpm.value) +
+    (live ? ' · live data ' + ((performance.now() - lastDataAt) / 1000).toFixed(1) + 's ago · quiet ' + liveQuiet + ' · stale ' + stale : '') +
+    ' · loop ' + (loopId !== null);
+}
+document.addEventListener('keydown', e => {
+  if (e.key !== 'd' || e.target.tagName === 'INPUT') return;
+  let box = document.getElementById('diagBox');
+  if (box) { box.remove(); clearInterval(window._diagTimer); return; }
+  box = document.createElement('div');
+  box.id = 'diagBox';
+  box.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:60;background:#0b1220;color:#9fe6c2;border:1px solid #26355a;' +
+    'border-radius:10px;padding:8px 12px;font:12px/1.4 monospace;max-width:50vw';
+  document.body.appendChild(box);
+  window._diagTimer = setInterval(() => { try { box.textContent = '🩺 ' + diagnostics(); } catch (err) { box.textContent = String(err); } }, 500);
+});
+
 // ===== 音樂引擎看門狗（所有模式）=====
 // 如果正在播放，但音樂引擎超過 1.5 秒沒有動（例如音效裝置卡住、瀏覽器暫停聲音），
 // 就自動重新啟動。重試 3 次還是不行，就在畫面上請使用者點一下。
