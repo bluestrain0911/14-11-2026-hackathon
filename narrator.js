@@ -213,8 +213,24 @@ async function askGemini(event, facts) {
 }
 
 // Call Gemini: send a prompt, get text back (used by both commentary and the post-match report)
+// Gemini model names change often (old ones get shut down), so if the chosen model is not found,
+// ask the API which Flash models this key can use, switch to the newest one and remember it.
+let geminiModelFixTried = false;
+async function findGeminiModel() {
+  const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?key=' + encodeURIComponent(setting('geminiKey')));
+  if (!r.ok) return null;
+  const models = ((await r.json()).models || [])
+    .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+    .map(m => m.name.replace(/^models\//, ''))
+    .filter(n => /flash/.test(n) && !/image|tts|audio|live|embed|thinking/.test(n));
+  // Prefer stable names (no "preview"/"exp"), then the highest version number
+  const version = n => parseFloat((n.match(/gemini-(\d+(?:\.\d+)?)/) || [0, 0])[1]);
+  models.sort((x, y) => (/preview|exp/.test(x) - /preview|exp/.test(y)) || version(y) - version(x));
+  return models[0] || null;
+}
+
 async function geminiGenerate(prompt) {
-  const model = setting('geminiModel') || 'gemini-2.5-flash';
+  const model = setting('geminiModel') || 'gemini-flash-latest';
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model +
               ':generateContent?key=' + encodeURIComponent(setting('geminiKey'));
   const response = await fetch(url, {
@@ -222,7 +238,23 @@ async function geminiGenerate(prompt) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
   });
-  if (!response.ok) throw new Error('Gemini HTTP ' + response.status);
+  if ((response.status === 404 || response.status === 400) && !geminiModelFixTried) {
+    geminiModelFixTried = true;
+    const pick = await findGeminiModel();
+    if (pick && pick !== model) {
+      saveSetting('geminiModel', pick);
+      document.getElementById('geminiModel').value = pick;
+      console.warn('Gemini model "' + model + '" not available, switched to', pick);
+      return geminiGenerate(prompt);
+    }
+  }
+  if (!response.ok) {
+    let detail = '';
+    try { const j = await response.json(); detail = (j.error && j.error.message) || ''; } catch (e) {}
+    const msg = 'Gemini HTTP ' + response.status + (detail ? ' — ' + detail.slice(0, 120) : '');
+    document.getElementById('narratorText').textContent = '⚠️ ' + msg + ' (using built-in lines instead)';
+    throw new Error(msg);
+  }
   const data = await response.json();
   return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
 }
