@@ -97,6 +97,18 @@ const LINES = {
   ]
 };
 
+// 專業版台詞（Live monitor 用）：簡短、清楚、不搞笑，像真正的交易提示
+// 每一句都是函式，可以把當下的價格、波動放進去
+const PRO_LINES = {
+  heaven: f => 'EUR/USD is rising' + (f.price ? ', now ' + f.price : '') + '.',
+  horror: f => 'EUR/USD is falling' + (f.price ? ', now ' + f.price : '') + '.',
+  calm: f => 'EUR/USD is stable. No significant moves.',
+  stormWarning: f => 'Volatility alert. Price movement is ' + (f.volatilityTimesNormal || 'several') + ' times normal.',
+  spike: f => 'Sharp price move detected' + (f.price ? ' at ' + f.price : '') + '.'
+};
+// 現在是不是「專業模式」：Live monitor 開著的時候就是
+const proMode = () => typeof liveActive !== 'undefined' && liveActive;
+
 // ---------- 設定（存在瀏覽器裡） ----------
 function loadSetting(name) {
   try { return localStorage.getItem('ms_' + name) || ''; } catch (e) { return ''; }
@@ -119,6 +131,15 @@ async function narrate(event, facts, force) {
   if (force && 'speechSynthesis' in window) speechSynthesis.cancel(); // 重要時刻直接插話
   lastSpoken = now;
   speaking = true;
+
+  // Live monitor：用專業的提示語，不用 Gemini 搞笑（提示要穩定、可預期）
+  if (proMode()) {
+    const make = PRO_LINES[event];
+    if (!make) { speaking = false; return; }
+    await speakLine(make(facts || {}), 'pro');
+    speaking = false;
+    return;
+  }
 
   let line = pickLine(event);
   try {
@@ -182,8 +203,8 @@ async function speakEleven(line, event) {
     headers: { 'Content-Type': 'application/json', 'xi-api-key': setting('elevenKey') },
     // stability 越低，語氣起伏越大、越有情緒；style 越高，越誇張
     body: JSON.stringify({ text: line, model_id: 'eleven_multilingual_v2',
-      voice_settings: { stability: event === 'calm' ? 0.5 : 0.25, similarity_boost: 0.8,
-                        style: event === 'calm' ? 0.2 : 0.7, use_speaker_boost: true } })
+      voice_settings: { stability: event === 'pro' ? 0.8 : event === 'calm' ? 0.5 : 0.25, similarity_boost: 0.8,
+                        style: event === 'pro' ? 0 : event === 'calm' ? 0.2 : 0.7, use_speaker_boost: true } })
   });
   if (!response.ok) throw new Error('ElevenLabs HTTP ' + response.status);
   const audio = new Audio(URL.createObjectURL(await response.blob()));
@@ -194,6 +215,7 @@ async function speakEleven(line, event) {
 // ---------- 備案：瀏覽器內建語音（免費） ----------
 // 每種情緒用不同的語速和音高：恐怖 = 慢、低沉；暴衝 = 快、激動；天堂 = 輕快、高一點
 const MOOD_VOICE = {
+  pro:          { rate: 1.0, pitch: 1.0 },      // 專業模式：平穩的語氣
   stormWarning: { rate: 1.2, pitch: 0.9 },
   shield:      { rate: 1.2,  pitch: 1.1 },
   newBest:     { rate: 1.25, pitch: 1.3 },

@@ -194,7 +194,7 @@ function liveStep(i) {
   const facts = { time: times[i], price: prices[i].toFixed(5), volatilityTimesNormal: (stormRatio[i] || 1).toFixed(1) };
   if (warn > liveLastWarn) { narrate('stormWarning', facts, warn === 2); somethingHappened(null); }   // 警報聲本來就會響
   else if (moods[i] !== liveLastMood) { narrate(moods[i], facts, false); somethingHappened(moods[i]); }
-  if (spikes[i]) somethingHappened(null);                                                          // 暴衝音效本來就會響
+  if (spikes[i]) { somethingHappened(null); if (Math.abs(spikes[i]) > 25 * spikeScale) narrate('spike', facts, true); }
   liveLastWarn = warn;
   liveLastMood = moods[i];
 }
@@ -217,7 +217,7 @@ function checkFeed() {
     stale = true;
     Tone.Destination.volume.rampTo(-40, 2);                 // 音樂淡出：沒有資料就不能假裝市場還在動
     document.title = '⚠️ NO DATA · EUR/USD';
-    speakLine('Warning. No new market data for ' + Math.round(secondsAgo) + ' seconds. The feed may be down.', 'stormWarning');
+    speakLine('Warning. No new market data for ' + Math.round(secondsAgo) + ' seconds. The feed may be down.', 'pro');
   }
   if (stale) {
     status.innerHTML = '<b style="color:#ff4d4f">⚠️ No new data for ' + Math.round(secondsAgo) +
@@ -247,7 +247,7 @@ document.getElementById('outageBtn').addEventListener('click', () => {
     nextStepAt = performance.now();
     lastDataAt = performance.now();
     Tone.Destination.volume.rampTo(Number(document.getElementById('volume').value) || 0, 1);
-    speakLine('Feed restored. Back to live.', 'calm');
+    speakLine('Feed restored. Back to live.', 'pro');
   }
 });
 
