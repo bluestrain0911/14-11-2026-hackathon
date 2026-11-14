@@ -206,8 +206,10 @@ async function findFreeVoice() {
   const r = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': setting('elevenKey') } });
   if (!r.ok) return null;
   const voices = (await r.json()).voices || [];
+  // 先找「自己的」聲音（Voice Design 生成的、或複製的），免費方案的 API 只能用這些
+  const own = voices.find(v => ['generated', 'cloned', 'professional'].includes(v.category));
   const ok = v => v.category === 'premade' && !v.is_legacy;
-  const pick = voices.find(v => ok(v) && /^(George|Sarah|Brian|Alice|Daniel|Charlotte)$/i.test(v.name)) ||
+  const pick = own || voices.find(v => ok(v) && /^(George|Sarah|Brian|Alice|Daniel|Charlotte)$/i.test(v.name)) ||
                voices.find(ok) || voices.find(v => !v.is_legacy) || null;
   return pick;
 }
@@ -222,7 +224,7 @@ async function speakEleven(line, event) {
       voice_settings: { stability: event === 'pro' ? 0.8 : event === 'calm' ? 0.5 : 0.25, similarity_boost: 0.8,
                         style: event === 'pro' ? 0 : event === 'calm' ? 0.2 : 0.7, use_speaker_boost: true } })
   });
-  if (response.status === 402 && !elevenVoiceFixTried) {
+  if (response.status === 402 && !elevenVoiceFixTried) {   // 每次打開網頁只自動換一次
     elevenVoiceFixTried = true;
     const pick = await findFreeVoice();
     if (pick && pick.voice_id !== voice) {
