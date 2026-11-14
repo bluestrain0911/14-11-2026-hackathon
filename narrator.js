@@ -146,7 +146,9 @@ async function narrate(event, facts, force) {
 
   try {
     let line = pickLine(event);
-    if (setting('geminiKey') && geminiCommentaryFails < 3) {
+    // In-game commentary uses the built-in lines so it stays instant; Gemini is only used for the post-match report.
+    // (Set GEMINI_COMMENTARY = true to let Gemini write live commentary again.)
+    if (GEMINI_COMMENTARY && setting('geminiKey') && geminiCommentaryFails < 3) {
       try {
         const g = await askGemini(event, facts);
         if (g) { line = g; geminiCommentaryFails = 0; } else geminiCommentaryFails++;
@@ -230,6 +232,7 @@ async function askGemini(event, facts) {
 // After 3 slow/failed commentary calls in a row, stop asking Gemini for commentary until the page reloads
 // (the post-match report still uses Gemini)
 let geminiCommentaryFails = 0;
+const GEMINI_COMMENTARY = false;   // live commentary from Gemini is off: it was too slow during play
 
 // Call Gemini: send a prompt, get text back (used by both commentary and the post-match report)
 // Gemini model names change often (old ones get shut down), so if the chosen model is not found,
