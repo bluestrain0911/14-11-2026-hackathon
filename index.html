@@ -707,17 +707,47 @@ function lineColor(k) {
   }
   return MOOD_COLORS[mood] || '#8a93a6';
 }
+// 滑鼠在圖表上時，畫一條直的虛線（十字線），比較容易看出指到哪一個時間點
+const crosshair = {
+  id: 'crosshair',
+  afterDatasetsDraw(c) {
+    const active = c.tooltip && c.tooltip.getActiveElements ? c.tooltip.getActiveElements() : [];
+    if (!active.length || hideAnswer) return;
+    const x = active[0].element.x, { top, bottom } = c.chartArea, ctx = c.ctx;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(155,175,220,0.55)'; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke();
+    ctx.restore();
+  }
+};
+
 const chart = new Chart(document.getElementById('chart'), {
+  plugins: [crosshair],
   type: 'line',
   data: { labels: [], datasets: [
     // 價格線：每一段依照情緒上色（天堂 = 金色、恐怖 = 紅色、平穩 = 灰藍色）
     { data: [], borderColor: '#8a93a6', pointRadius: 0, borderWidth: 2.5,
+      pointHoverRadius: 7, pointHoverBackgroundColor: '#ffffff', pointHoverBorderColor: '#5b8cff', pointHoverBorderWidth: 3,
       segment: { borderColor: ctx => lineColor(ctx.p0DataIndex) } },
     { data: [], borderColor: '#ff7a45', backgroundColor: '#ff7a45', pointRadius: 6, showLine: false }
   ]},
   // 圖表的高度由外框的 CSS（aspect-ratio）決定，不用 Chart.js 自己算的比例：
   // Chart.js 自己算比例時，視窗從小變大後會卡在舊的大小（它會被舊的高度限制住）
-  options: { animation: false, responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+  // 滑鼠只要在圖表上「左右移動」就會顯示最近那一點的時間和價格（不用剛好指到線上）
+  options: { animation: false, responsive: true, maintainAspectRatio: false,
+    interaction: { mode: 'index', axis: 'x', intersect: false },
+    plugins: { legend: { display: false },
+      tooltip: {
+        filter: item => item.datasetIndex === 0 && item.parsed.y != null && !hideAnswer,   // 猜漲跌遊戲中不顯示，免得洩漏答案
+        displayColors: false, backgroundColor: 'rgba(11,18,32,0.95)', borderColor: '#5b8cff', borderWidth: 1.5,
+        padding: 12, cornerRadius: 10, caretSize: 7,
+        titleFont: { family: 'Manrope', size: 14, weight: '600' }, titleColor: '#9aa6bf',
+        bodyFont: { family: 'Manrope', size: 20, weight: '800' }, bodyColor: '#ffffff',
+        callbacks: {
+          title: items => items.length ? '🕒 ' + items[0].label : '',
+          label: item => 'EUR/USD ' + Number(item.parsed.y).toFixed(5)
+        }
+      } },
     scales: { x: { display: false }, y: { ticks: { color: '#8e9bb5', font: { family: 'Manrope' } }, grid: { color: '#1f2b47' } } } }
 });
 
