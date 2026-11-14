@@ -240,21 +240,19 @@ function liveStep(i) {
   const warn = warnLevel[i] || 0;
   document.title = (liveQuiet ? '😴 ' : warn === 2 ? '🔴 STORM · ' : warn === 1 ? '🟡 ' : '🎵 ') + 'EUR/USD ' + prices[i].toFixed(5) + ' · ' + label;
 
-  // 安靜模式：
-  //   「平穩」= 最近 N 分鐘的價格都擠在一個小範圍裡（不超過一般 10 分鐘波動的 1.5 倍），而且沒有警報、沒有暴衝
-  //   「大幅度」= 價格離開安靜時的水準超過一般 10 分鐘波動的 2 倍，或出現風暴警報、暴衝
+  // 安靜模式（跟線的顏色一致）：
+  //   「平穩」= 最近 N 分鐘的線全部是灰色，而且沒有警報、沒有暴衝 → 音樂和播報停止
+  //   「醒來」= 線連續 2 分鐘是同一個有顏色的方向（金色／紅色…），或價格離開安靜時的水準很多，或出現警報、暴衝
   const N = quietAfter();
   const wasQuiet = liveQuiet;
-  if (N && !liveQuiet && i - N >= 0) {
-    const recent = prices.slice(i - N + 1, i + 1);
-    const tight = Math.max(...recent) - Math.min(...recent) <= 1.5 * normalMove;
-    if (tight && !(warnLevel[i] || 0) && !spikes[i]) {
-      quietAnchor = recent.reduce((a, b) => a + b, 0) / recent.length;
-      goQuiet();
-    }
+  if (N && !liveQuiet && i - N >= liveFrom) {
+    let allGrey = true;
+    for (let k = i - N + 1; k <= i; k++) if (moodAt(k) !== 'calm' || warnLevel[k] || spikes[k]) { allGrey = false; break; }
+    if (allGrey) { quietAnchor = prices[i]; goQuiet(); }
   } else if (liveQuiet) {
+    const coloured = moodAt(i) !== 'calm' && moodAt(i) === moodAt(i - 1);
     const bigMove = Math.abs(prices[i] - quietAnchor) > 2 * normalMove;
-    if (bigMove || (warnLevel[i] || 0) > 0 || spikes[i]) wakeUp();   // 有明顯的動靜了：醒來
+    if (coloured || bigMove || (warnLevel[i] || 0) > 0 || spikes[i]) wakeUp();   // 有明顯的動靜了：醒來
   }
 
   // 播報：情緒改變、風暴預警

@@ -729,12 +729,14 @@ soft.volume.value = -14;
 const horrorDistortion = new Tone.Distortion(0.5).connect(reverb);
 horrorDistortion.wet.value = 0;
 const droneFilter = new Tone.Filter(500, 'lowpass').connect(horrorDistortion);
-// 限制同時發聲的數量，減輕電腦負擔（太多聲音同時響會讓音效引擎卡住）
-pad.maxPolyphony = 8;
-bell.maxPolyphony = 10;
+// 同時可以響的音數要夠多：和弦換得快的時候，舊和弦還在淡出，新和弦又進來，
+// 上限太低的話新的音會被丟掉，聽起來就像音樂突然不見了
+pad.maxPolyphony = 48;
+bell.maxPolyphony = 32;
 const drone = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'sawtooth' },
   envelope: { attack: 1, decay: 0.5, sustain: 0.9, release: 2 } }).connect(droneFilter);
 drone.volume.value = -16;
+drone.maxPolyphony = 32;
 const vibrato = new Tone.Vibrato(6, 0.5).connect(reverb);
 const eerie = new Tone.Synth({ oscillator: { type: 'sine' },
   envelope: { attack: 0.4, decay: 0.5, sustain: 0.6, release: 1.5 } }).connect(vibrato);
