@@ -103,7 +103,8 @@ const PRO_LINES = {
   heaven: f => 'EUR/USD is rising' + (f.price ? ', now ' + f.price : '') + '.',
   horror: f => 'EUR/USD is falling' + (f.price ? ', now ' + f.price : '') + '.',
   calm: f => 'EUR/USD is stable. No significant moves.',
-  stormWarning: f => 'Volatility alert. Price movement is ' + (f.volatilityTimesNormal || 'several') + ' times normal.',
+  stormWarning: f => 'Volatility alert. Price movement is ' + (f.volatilityTimesNormal || 'several') + ' times normal.' +
+    (f.myPositionCouldSwingIn10MinUSD ? ' Your position could swing about ' + f.myPositionCouldSwingIn10MinUSD.toLocaleString('en-GB') + ' dollars in the next ten minutes.' : ''),
   spike: f => 'Sharp price move detected' + (f.price ? ' at ' + f.price : '') + '.'
 };
 // 現在是不是「專業模式」：Live monitor 開著的時候就是

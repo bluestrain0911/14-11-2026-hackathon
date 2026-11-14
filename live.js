@@ -161,6 +161,7 @@ async function startLive() {
 
   // 前 90% 當作「已經發生的歷史」直接畫出來，從 90% 的位置開始即時播放到 100%
   liveFrom = Math.floor(prices.length * 0.9);
+  posEntry = prices[liveFrom];     // 假設在即時資料開始時進場
   step = liveFrom;
   const historyEvery = Math.max(1, Math.ceil(liveFrom / 500));
   liveEvery = 1;                  // 即時進來的每一筆都畫出來
@@ -214,6 +215,7 @@ function stopLive() {
 
 // 每一筆新資料送到時（由 updateScreen 呼叫）
 function liveStep(i) {
+  try { updateExposure(i); } catch (e) { console.warn('Exposure skipped:', e.message); }
   // 圖表有兩種看法：
   //   近期（預設）：只看最近 4 小時，每分鐘一個點，線會一直往左捲，看得出在動
   //   全部：前 90% 的歷史（抽樣）+ 即時進來的每一筆
@@ -257,6 +259,8 @@ function liveStep(i) {
 
   // 播報：情緒改變、風暴預警
   const facts = { time: times[i], price: prices[i].toFixed(5), volatilityTimesNormal: (stormRatio[i] || 1).toFixed(1) };
+  const ex = exposureAt(i);
+  if (ex) facts.myPositionCouldSwingIn10MinUSD = Math.round(ex.risk10);
   if (liveQuiet) { /* 安靜中：不播報 */ }
   else if (warn > liveLastWarn) { narrate('stormWarning', facts, warn === 2); somethingHappened(null); }   // 警報聲本來就會響
   else if (moodAt(i) !== liveLastMood || wasQuiet) { narrate(moodAt(i), facts, wasQuiet); somethingHappened(moodAt(i)); }
@@ -323,3 +327,50 @@ document.getElementById('outageBtn').addEventListener('click', () => {
 document.getElementById('liveStartBtn').addEventListener('click', startLive);
 document.getElementById('liveView').addEventListener('change', () => { if (liveActive) liveStep(step); });
 document.getElementById('liveStopBtn').addEventListener('click', stopLive);
+
+
+// =====================================================================
+// 我的部位（Challenge 1：Understand your exposure）
+// 把市場的變化換算成「我的錢」：目前盈虧、接下來 10 分鐘的風險、今天最大的一分鐘衝擊
+// 1 歐元部位，價格每變 0.0001（1 pip）= 0.0001 美元；€1,000,000 → 每 pip $100
+// =====================================================================
+let posEntry = null;
+const posSide = () => Number(document.getElementById('posSide').value);
+const posSize = () => Math.max(0, Number(document.getElementById('posSize').value) || 0);
+const usd = x => (x < 0 ? '−' : x > 0 ? '+' : '') + '$' + Math.abs(Math.round(x)).toLocaleString('en-GB');
+
+function exposureAt(i) {
+  const side = posSide(), size = posSize();
+  if (!side || !size || posEntry === null) return null;
+  const pnl = side * size * (prices[i] - posEntry);
+  // 最近 10 分鐘的高低差：波動會延續，所以接下來 10 分鐘「很可能」也晃這麼大
+  const from = Math.max(0, i - 9);
+  let hi = -Infinity, lo = Infinity;
+  for (let k = from; k <= i; k++) { hi = Math.max(hi, prices[k] + (ranges[k] || 0) / 2); lo = Math.min(lo, prices[k] - (ranges[k] || 0) / 2); }
+  const risk10 = size * (hi - lo);
+  // 今天到目前為止，最大的一分鐘變動（最壞的一下）
+  let worst = 0;
+  for (let k = 1; k <= i; k++) worst = Math.max(worst, Math.abs(prices[k] - prices[k - 1]));
+  return { pnl, risk10, worstHit: size * worst, perPip: size * 0.0001 };
+}
+
+function updateExposure(i) {
+  const box = document.getElementById('exposureText');
+  const e = exposureAt(i);
+  if (!e) { box.innerHTML = '<span>' + (posSide() ? 'Start monitoring to see your exposure.' : 'No position — nothing at risk.') + '</span>'; return; }
+  const level = warnLevel[i] || 0;
+  const advice = level === 2 ? '🔴 Storm: consider cutting size or setting a stop-loss now'
+               : level === 1 ? '🟡 Storm brewing: check your stop-loss'
+               : '😌 Normal conditions';
+  box.innerHTML =
+    '<div>Profit / loss now<b style="color:' + (e.pnl >= 0 ? '#3ddc97' : '#ff6b6b') + '">' + usd(e.pnl) + '</b></div>' +
+    '<div class="risk-' + level + '">Could swing in next 10 min<b>±' + usd(e.risk10).replace('+', '') + '</b></div>' +
+    '<div>Worst 1-minute jolt today<b>' + usd(-e.worstHit) + '</b></div>' +
+    '<div>Each pip is worth<b>$' + Math.round(e.perPip).toLocaleString('en-GB') + '</b></div>' +
+    '<div style="grid-column:1/-1">' + advice + '</div>';
+}
+
+function enterAtCurrent() { if (liveActive) { posEntry = prices[step]; updateExposure(step); } }
+document.getElementById('posEnterBtn').addEventListener('click', enterAtCurrent);
+document.getElementById('posSide').addEventListener('change', enterAtCurrent);
+document.getElementById('posSize').addEventListener('input', () => { if (liveActive) updateExposure(step); });
