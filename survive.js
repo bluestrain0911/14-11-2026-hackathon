@@ -93,7 +93,11 @@ let streak = 0;              // 連續賺錢幾步
 // ---------- 停損盾牌 🛡️ ----------
 // 每局 3 個。開啟後，這筆交易如果虧超過 $500，就自動幫你逃回現金。
 // 這就是真實交易裡的「停損單」（stop-loss）：事先決定最多願意虧多少，到了就自動出場。
-const SHIELD_LIMIT = 500;
+// 最多願意虧多少：玩家可以在下拉選單自己設定（$300 / $500 / $1,000）
+const shieldLimit = () => Number(document.getElementById('lossLimit').value) || 500;
+let lastWarn = 0;            // 上一步的風暴警報等級
+let promptUntil = 0;         // 「要不要開盾牌？」的提示顯示到什麼時候
+let warningsSeen = 0, warningsProtected = 0;
 let shields = 3, shieldArmed = false, shieldBase = 0;
 
 // ---------- 賽後報告要用的紀錄 ----------
@@ -124,6 +128,7 @@ function startSurvival() {
   const cut = arr => arr.slice(start, start + GAME_STEPS);
   prices = cut(prices); ranges = cut(ranges); times = cut(times);
   moods = cut(moods); intensity = cut(intensity); storm = cut(storm);
+  stormRatio = cut(stormRatio); warnLevel = cut(warnLevel);
   computeSpikes();     // 暴衝用「這一局」的標準重新算，不然風暴時段會一直響
 
   money = START_MONEY; peakMoney = START_MONEY; position = 0; lastIndex = -1;
@@ -131,6 +136,7 @@ function startSurvival() {
   shields = 3; shieldArmed = false; shieldBase = 0;
   trades = []; tradeStart = null; alignedSteps = 0;
   shieldSaves = 0; goals = 0; groans = 0; lowestMoney = START_MONEY;
+  lastWarn = 0; promptUntil = 0; warningsSeen = 0; warningsProtected = 0;
   document.getElementById('reportBox').classList.add('hidden');
   lastMood = 'calm'; gameOver = false; particles = []; popups = [];
   surviving = true;
@@ -198,8 +204,32 @@ function surviveStep(i) {
   if (position === follow) alignedSteps++;
   lastIndex = i;
 
-  // 盾牌：這筆交易虧超過 $500 → 自動逃回現金
-  if (shieldArmed && position !== 0 && money < shieldBase - SHIELD_LIMIT) triggerShield(i);
+  // ===== 風暴預警：波動突然變大 → 警告玩家，問要不要開盾牌 =====
+  const level = warnLevel[i] || 0;
+  if (level > lastWarn) {
+    warningsSeen++;
+    playAlarm(level);
+    const ratio = stormRatio[i].toFixed(1);
+    if (position !== 0 && !shieldArmed) {
+      if (document.getElementById('autoProtect').checked && shields > 0) {
+        armShield();                                          // 自動保護模式：直接幫你開盾牌
+        warningsProtected++;
+        popups.push({ text: '🤖 AUTO-PROTECT: shield on', color: '#7ec8ff', y: -60, life: 1.8 });
+      } else {
+        promptUntil = performance.now() + 5000;               // 顯示 5 秒的「要不要保護？」提示
+      }
+    } else {
+      warningsProtected++;            // 已經開了盾牌，或手上是現金：本來就是安全的
+    }
+    popups.push({ text: (level === 2 ? '🔴 STORM WARNING ' : '🟡 STORM BREWING ') + ratio + '×',
+                  color: level === 2 ? '#ff4d4f' : '#faad14', y: -100, life: 1.8 });
+    narrate('stormWarning', { volatilityTimesNormal: ratio, playerPosition: ['short', 'cash', 'long'][position + 1],
+                              shieldsLeft: shields }, level === 2);
+  }
+  lastWarn = level;
+
+  // 盾牌：這筆交易虧超過設定的金額 → 自動逃回現金
+  if (shieldArmed && position !== 0 && money < shieldBase - shieldLimit()) triggerShield(i);
   peakMoney = Math.max(peakMoney, money);
 
   // 觀眾的音量跟著市場有多激烈
@@ -312,6 +342,7 @@ function matchStats(brokeOut) {
     trades: trades.length, bestTrade: sorted[0] || null, worstTrade: sorted[sorted.length - 1] || null,
     followedMusicPercent: Math.round(alignedSteps / Math.max(1, lastIndex + 1) * 100),
     shieldsUsed: 3 - shields, shieldSaves: shieldSaves, goals: goals, bigLosses: groans,
+    stormWarnings: warningsSeen, stormWarningsProtected: warningsProtected, lossLimit: shieldLimit(),
     lowestBalance: Math.round(lowestMoney),
     tradeLog: trades.slice(0, 20)
   };
@@ -342,7 +373,8 @@ function setPosition(newPosition) {
 function armShield() {
   if (!surviving || gameOver || shieldArmed || shields <= 0) return;
   shields--; shieldArmed = true; shieldBase = money;
-  popups.push({ text: '🛡 SHIELD ON (max loss $' + SHIELD_LIMIT + ')', color: '#7ec8ff', y: -20, life: 1.4 });
+  if (performance.now() < promptUntil) { warningsProtected++; promptUntil = 0; }   // 玩家聽了警告，開了盾牌
+  popups.push({ text: '🛡 SHIELD ON (max loss $' + shieldLimit() + ')', color: '#7ec8ff', y: -20, life: 1.4 });
   clang.triggerAttackRelease('C4', '16n');
   updateStats();
 }
@@ -492,6 +524,23 @@ function drawStage(t) {
 
   // 計分板：像電視轉播右上角那樣
   if (surviving && lastIndex >= 0) drawScoreboard(W, t);
+
+  // 風暴預警 + 「要不要保護？」提示（左上角）
+  const warn = surviving && !gameOver && lastIndex >= 0 ? warnLevel[lastIndex] : 0;
+  if (warn > 0) {
+    const flash = Math.floor(t / 400) % 2 === 0;
+    ctx.fillStyle = warn === 2 ? (flash ? '#ff4d4f' : '#a3262a') : '#faad14';
+    ctx.fillRect(10, 10, 330, 30);
+    ctx.fillStyle = warn === 2 ? '#ffffff' : '#3a2e00'; ctx.font = 'bold 15px system-ui';
+    ctx.fillText((warn === 2 ? '🔴 STORM WARNING' : '🟡 Storm brewing') + ' · volatility ' +
+                 stormRatio[lastIndex].toFixed(1) + '× normal', 18, 30);
+    if (performance.now() < promptUntil && position !== 0 && !shieldArmed) {
+      ctx.fillStyle = 'rgba(0,0,0,0.75)'; ctx.fillRect(10, 42, 330, 30);
+      ctx.fillStyle = '#7ec8ff'; ctx.font = 'bold 14px system-ui';
+      ctx.fillText(shields > 0 ? '🛡 Protect this trade? Press E (max loss $' + shieldLimit() + ')'
+                               : '⚠️ No shields left — press Space to go to cash', 18, 62);
+    }
+  }
 
   // 開局倒數
   const left = countdownEnd - performance.now();

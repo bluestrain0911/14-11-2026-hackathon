@@ -28,9 +28,13 @@ function ruleTips(stats) {
   } else if (stats.followedMusicPercent >= 60) {
     tips.push('Great ears! You traded with the music ' + stats.followedMusicPercent + '% of the time.');
   }
-  if (stats.worstTrade && stats.worstTrade.pnl < -SHIELD_LIMIT && stats.shieldsUsed === 0) {
+  if (stats.worstTrade && stats.worstTrade.pnl < -shieldLimit() && stats.shieldsUsed === 0) {
     tips.push('Your worst trade (' + stats.worstTrade.side + ', ' + stats.worstTrade.from + '–' + stats.worstTrade.to +
-              ') lost ' + money$(stats.worstTrade.pnl) + '. A 🛡 shield (stop-loss) would have capped it at $' + SHIELD_LIMIT + '.');
+              ') lost ' + money$(stats.worstTrade.pnl) + '. A 🛡 shield (stop-loss) would have capped it at $' + shieldLimit() + '.');
+  }
+  if (stats.stormWarnings > 0) {
+    tips.push('There were ' + stats.stormWarnings + ' storm warning(s); you were protected in ' + stats.stormWarningsProtected +
+              '. When volatility jumps, it usually stays high for a while — that\'s the time to use a shield or go to cash.');
   }
   if (stats.shieldSaves > 0) {
     tips.push('Your shield saved you ' + stats.shieldSaves + ' time(s). That\'s exactly what professional traders call a stop-loss.');
@@ -42,7 +46,7 @@ function ruleTips(stats) {
     tips.push('Best moment: going ' + stats.bestTrade.side + ' from ' + stats.bestTrade.from + ' to ' + stats.bestTrade.to +
               ' for ' + money$(stats.bestTrade.pnl) + '.');
   }
-  return tips.slice(0, 4);
+  return tips.slice(0, 5);
 }
 
 async function showReport(stats) {
@@ -64,6 +68,7 @@ async function showReport(stats) {
     statLine('Followed the music', stats.followedMusicPercent + '%') +
     statLine('Goals ⚽ / Big losses 😱', stats.goals + ' / ' + stats.bigLosses) +
     statLine('Shields used / saves', stats.shieldsUsed + ' / ' + stats.shieldSaves) +
+    statLine('Storm warnings / protected', stats.stormWarnings + ' / ' + stats.stormWarningsProtected) +
     statLine('Lowest balance', '$' + stats.lowestBalance.toLocaleString()) +
     '<div id="coachText" style="margin-top:12px; line-height:1.6;">' +
       ruleTips(stats).map(t => '• ' + escapeHtml(t)).join('<br>') +
@@ -80,8 +85,9 @@ async function showReport(stats) {
       const prompt =
         'You are a witty British football pundit giving a post-match analysis, but the "match" was a trading game ' +
         'where a beginner traded EUR/USD while listening to music (heaven music = rising, horror music = falling, ' +
-        'calm = flat). They could buy (long), sell (short) or hold cash, and use up to 3 "shields" (stop-loss at -$' +
-        SHIELD_LIMIT + '). Each pip = $100, start balance $10,000.\n' +
+        'calm = flat). The game shows storm warnings when recent volatility is 2x or 3.5x normal. ' +
+        'They could buy (long), sell (short) or hold cash, and use up to 3 "shields" (stop-loss at -$' +
+        shieldLimit() + '). Each pip = $100, start balance $10,000.\n' +
         'Here are the match stats as JSON: ' + JSON.stringify(stats) + '\n' +
         'Write: first line exactly "Player rating: X/10" (X between 1 and 10, may use .5). Then exactly 3 short bullet ' +
         'points starting with "- ": one thing they did well, one mistake (mention a specific time from the trade log ' +

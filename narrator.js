@@ -78,6 +78,11 @@ const LINES = {
     "They're going short! Betting on the fall!",
     "Selling! Brave, very brave!"
   ],
+  stormWarning: [
+    "Storm warning! It's getting wild out there... protect yourself!",
+    "Hold on! The volatility just tripled! Shields up?",
+    "The storm is coming! This is not the time to be brave!"
+  ],
   shield: [
     "Saved by the shield! What a defensive play!",
     "The stop-loss kicks in! Disaster averted!"
@@ -189,6 +194,7 @@ async function speakEleven(line, event) {
 // ---------- 備案：瀏覽器內建語音（免費） ----------
 // 每種情緒用不同的語速和音高：恐怖 = 慢、低沉；暴衝 = 快、激動；天堂 = 輕快、高一點
 const MOOD_VOICE = {
+  stormWarning: { rate: 1.2, pitch: 0.9 },
   shield:      { rate: 1.2,  pitch: 1.1 },
   newBest:     { rate: 1.25, pitch: 1.3 },
   goal:        { rate: 1.3,  pitch: 1.3 },
