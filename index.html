@@ -644,9 +644,16 @@ function recentMood(i) {
 }
 const isJumpy = i => !!spikes[i] || (storm[i] || 0) > 0.35;
 
+// 「走到第 i 點時」的情緒 —— 永遠和畫面上最新那一段線的顏色一致，音樂、提示、角色都用它
+//   金色／綠色 = 上升（天堂）、紅色／粉紅 = 下降（恐怖）、灰色 = 平穩
 function moodAt(i) {
-  if (!(typeof liveActive !== 'undefined' && liveActive)) return moods[i];
-  return recentMood(i);
+  if (typeof liveActive !== 'undefined' && liveActive) return recentMood(i);
+  if (i <= 0) return moods[0] || 'calm';
+  const k = Math.min(i, prices.length - 1) - 1;          // 最新那一段線：k → k+1
+  const m = lineMoods[k] || moods[k];
+  if (m === 'calm' && (spikes[k] || spikes[k + 1] || (storm[k] || 0) > 0.35))
+    return prices[k + 1] >= prices[k] ? 'heaven' : 'horror';   // 綠色／粉紅那種「跳很大」的段
+  return m || 'calm';
 }
 
 function lineColor(k) {
@@ -842,10 +849,13 @@ function onTickInner(time) {
   // ===== 決定情緒，並彈出長音 =====
   // 每一小節的開頭會重新彈一次；如果情緒在小節中間變了，就在下一拍（最多等 3 步）立刻切換，
   // 這樣音樂不會慢半拍，但也不會在拍子中間亂切
-  const moodChanged = moodAt(step) !== mood;
-  if (tick === 0 || (tick % 4 === 0 && moodChanged)) {
+  // 音樂跟著「畫面上最新那一段線」的顏色走（非即時模式時 step 是下一個要畫的點）
+  const live = typeof liveActive !== 'undefined' && liveActive;
+  const cur = live ? step : Math.max(0, Math.min(step - 1, prices.length - 1));
+  const moodChanged = moodAt(cur) !== mood;
+  if (tick === 0 || moodChanged) {
     if (moodChanged) { pad.releaseAll(time); drone.releaseAll(time); }
-    mood = moodAt(step); power = Math.max(intensity[step], mood !== moods[step] ? 0.6 : 0); wind = storm[step];
+    mood = moodAt(cur); power = Math.max(intensity[cur], mood !== moods[cur] ? 0.6 : 0); wind = storm[cur];
     if (tick === 0) bar++;
 
     // 每個聲音只代表一件事，聽的人才不會混淆：
@@ -900,18 +910,18 @@ function onTickInner(time) {
   }
 
   // 急轉彎音效：趨勢中突然反方向走一下 →「嘟嘟↑」或「嘟嘟↓」（比暴衝小聲）
-  if (reversal[step] && step !== lastReversalStep && !spikes[step]) {
-    lastReversalStep = step;
-    const notes = reversal[step] === 'up' ? ['C6', 'G6'] : ['G4', 'C4'];
+  if (reversal[cur] && cur !== lastReversalStep && !spikes[cur]) {
+    lastReversalStep = cur;
+    const notes = reversal[cur] === 'up' ? ['C6', 'G6'] : ['G4', 'C4'];
     blip.triggerAttackRelease(notes[0], '32n', time);
     blip.triggerAttackRelease(notes[1], '32n', time + 0.08);
   }
 
   // 暴衝音效：每一個暴衝只在第一次播到時響一次
-  if (spikes[step] && step !== lastSpikeStep) {
-    lastSpikeStep = step;
-    playSpike(spikes[step], time);
-    const pips = spikes[step];
+  if (spikes[cur] && cur !== lastSpikeStep) {
+    lastSpikeStep = cur;
+    playSpike(spikes[cur], time);
+    const pips = spikes[cur];
     setTimeout(() => showSpike(pips), 0);
   }
 

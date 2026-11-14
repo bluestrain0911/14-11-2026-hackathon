@@ -206,7 +206,7 @@ function surviveStep(i) {
   moneyHistory.push(money);
   lowestMoney = Math.min(lowestMoney, money);
   // 你的操作有沒有「跟著音樂」：天堂時買、恐怖時賣、平靜時拿現金
-  const follow = { heaven: 1, horror: -1, calm: 0 }[moods[i]];
+  const follow = { heaven: 1, horror: -1, calm: 0 }[moodAt(i)];
   if (position === follow) alignedSteps++;
   lastIndex = i;
 
@@ -274,14 +274,14 @@ function surviveStep(i) {
   const facts = { time: times[i], price: prices[i].toFixed(5), last10MinutesPips: Math.round(pips),
                   playerBalance: Math.round(money), playerPosition: ['short', 'cash', 'long'][position + 1] };
   if (storm[i] > 0.85 && Math.abs(pips) > 15) narrate('spike', facts, false);
-  else if (moods[i] !== lastMood) narrate(moods[i], facts, false);
+  else if (moodAt(i) !== lastMood) narrate(moodAt(i), facts, false);
   else if (money > START_MONEY * 1.3 && Math.random() < 0.05) narrate('bigWin', facts, false);
-  lastMood = moods[i];
+  lastMood = moodAt(i);
 
   // 恐怖得很厲害時，偶爾有鬼跳出來
   const now = performance.now();
   if (!document.getElementById('gentleMode').checked &&
-      moods[i] === 'horror' && intensity[i] > 0.6 && now - lastGhost > 8000 && Math.random() < 0.15) {
+      moodAt(i) === 'horror' && intensity[i] > 0.6 && now - lastGhost > 8000 && Math.random() < 0.15) {
     ghostUntil = now + 450; lastGhost = now;
     sfx(() => {
       screamNoise.triggerAttackRelease('8n', Tone.now() + 0.02);
@@ -374,7 +374,7 @@ function setPosition(newPosition) {
   updateStats();
   // 播報員評論你的動作（球評在講球員）
   const event = newPosition === 1 ? 'playerLong' : newPosition === -1 ? 'playerShort' : 'playerCash';
-  narrate(event, { mood: moods[Math.max(0, lastIndex)], balance: Math.round(money) }, false);
+  narrate(event, { mood: moodAt(Math.max(0, lastIndex)), balance: Math.round(money) }, false);
 }
 
 // 開啟盾牌
@@ -406,8 +406,8 @@ function speakStatus() {
   const i = Math.max(0, lastIndex);
   const profit = Math.round(money - START_MONEY);
   const where = position === 1 ? 'You are long.' : position === -1 ? 'You are short.' : 'You are in cash.';
-  const market = { heaven: 'The market is rising', horror: 'The market is falling', calm: 'The market is flat' }[moods[i] || 'calm'];
-  const strength = moods[i] === 'calm' ? '.' : intensity[i] > 0.6 ? ', strongly.' : ', gently.';
+  const market = { heaven: 'The market is rising', horror: 'The market is falling', calm: 'The market is flat' }[moodAt(i) || 'calm'];
+  const strength = moodAt(i) === 'calm' ? '.' : intensity[i] > 0.6 ? ', strongly.' : ', gently.';
   speakLine('Balance ' + Math.round(money) + ' dollars, ' + (profit >= 0 ? 'up ' : 'down ') + Math.abs(profit) + '. ' +
             where + ' ' + market + strength + ' ' + shields + ' shields left' + (shieldArmed ? ', shield on.' : '.'), 'calm');
 }
@@ -449,7 +449,7 @@ function drawStage(t) {
   const W = stage.width, H = stage.height;
 
   const i = Math.max(0, lastIndex);
-  const mood = surviving && moods.length ? moods[i] : 'calm';
+  const mood = surviving && moods.length ? moodAt(i) : 'calm';
   const power = surviving && intensity.length ? intensity[i] : 0;
   const losing = money < START_MONEY;
 
