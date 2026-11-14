@@ -112,10 +112,22 @@ function feedTick() {
   if (!liveActive || outage) return;
   const now = performance.now();
   if (now < nextStepAt) return;
-  if (step >= prices.length - 1) { stopLive(); document.getElementById('liveStatus').textContent = 'Reached the end of the data (100%).'; return; }
+  if (step >= prices.length - 1) {
+    stopLive();
+    document.getElementById('liveStatus').innerHTML =
+      '<b>⏹ Reached the end of the data (100%).</b> Press Start monitoring to run it again.';
+    speakLine('End of data. Monitoring stopped.', 'pro');
+    return;
+  }
   step++;
   nextStepAt = now + liveInterval();
   lastDataAt = now;
+  // 資料又進來了：如果剛才判定為中斷，自動恢復音樂（不用手動按 Restore）
+  if (stale) {
+    stale = false;
+    Tone.Destination.volume.rampTo(Number(document.getElementById('volume').value) || 0, 1);
+    speakLine('Data is back. Resuming.', 'pro');
+  }
   updateScreen(step);
 }
 
