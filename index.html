@@ -52,6 +52,19 @@
   <h1>Market Symphony</h1>
   <p class="subtitle">Hear the market: rising prices sound like heaven, falling prices sound like a horror film</p>
 
+  <details open class="game" style="margin:12px 0; padding:12px 16px;">
+    <summary style="cursor:pointer; font-weight:600;">🎧 How to listen</summary>
+    <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:8px 24px; margin-top:10px; font-size:14px; line-height:1.5;">
+      <div><b style="color:#f5c542">Music style = direction.</b> Heaven (choir + rising bells) = EUR is rising against USD. Calm = flat. Horror (low drone + heartbeat) = EUR is falling.</div>
+      <div><b style="color:#7ec8ff">Speed + cymbals = volatility.</b> The faster it plays and the more cymbals you hear, the more violently the price is moving.</div>
+      <div><b style="color:#3ecf8e">Pitch, heartbeat, layers = trend strength.</b> A strong rally climbs higher with denser bells; a deep sell-off has a faster heartbeat.</div>
+      <div><b style="color:#ff6b6b">Sound effects = sudden spikes.</b> Whoosh + ding = jumped up in one minute. Whoosh + boom = crashed. Thunder = a huge spike.</div>
+    </div>
+    <p style="font-size:13px; color:#9aa0a6; margin:10px 0 0;">The music describes the <b>market</b>, not your profit: going long earns when EUR rises, going short earns when it falls.
+      Data: SGX FX EUR/USD 1-month forward, 1-minute bars, replayed from history.</p>
+    <label style="font-size:14px; display:block; margin-top:8px;"><input id="gentleMode" type="checkbox"> Gentle mode (no jump scares, softer horror)</label>
+  </details>
+
   <div class="tabs">
     <button id="replayTab" class="active">Replay</button>
     <button id="gameTab">Guess game</button>
@@ -72,6 +85,7 @@
       <button id="cashBtn" style="background:#4a5263">💵 Cash (Space)</button>
       <button id="sellBtn" style="background:#b3262a">⬇ Sell (S)</button>
       <button id="shieldBtn" style="background:#2c5d8a">🛡 Shield (E)</button>
+      <button id="statusBtn" style="background:#262a33">🔊 Status (B)</button>
       <button id="surviveStart">▶ Start trading</button>
       <button id="pauseBtn" style="background:#262a33">⏸ Pause (P)</button>
     </div>
@@ -117,6 +131,8 @@
       <button id="answerDown">⬇ Falling</button>
     </div>
     <div id="feedback" class="feedback"></div>
+    <div id="blindStats" style="margin-top:10px; font-size:14px; color:#9aa0a6;"></div>
+    <button id="resetBlind" style="background:#262a33; font-size:13px; padding:6px 10px; margin-top:6px;">Reset test results</button>
     <div class="answers">
       <button id="startRoundBtn">▶ Start game</button>
       <button id="replayRoundBtn" class="hidden">↺ Hear it again</button>
@@ -478,11 +494,12 @@ function onTick(time) {
     mood = moods[step]; power = intensity[step]; wind = storm[step];
     if (tick === 0) bar++;
 
-    const bpm = mood === 'heaven' ? 88 + 30 * power
-              : mood === 'horror' ? 66 + 50 * power
-              : 76;
-    Tone.Transport.bpm.rampTo(bpm + wind * 30, 1);
-    horrorDistortion.wet.rampTo(mood === 'horror' ? power * 0.8 : 0, 1);
+    // 每個聲音只代表一件事，聽的人才不會混淆：
+    //   音樂風格 = 方向；速度 = 波動有多大；音高、心跳快慢、樂器多寡 = 趨勢有多強
+    const baseBpm = mood === 'heaven' ? 90 : mood === 'horror' ? 72 : 76;   // 每種風格自己的基本速度
+    Tone.Transport.bpm.rampTo(baseBpm + wind * 60, 1);                       // 越劇烈越快
+    const gentle = document.getElementById('gentleMode').checked;
+    horrorDistortion.wet.rampTo(mood === 'horror' && !gentle ? power * 0.8 : 0, 1);
 
     if (mood === 'heaven') {
       // 越強烈，整首歌的調就越往上升（最多升 5 個半音），像一路飛上天
@@ -491,7 +508,7 @@ function onTick(time) {
     } else if (mood === 'horror') {
       // 低音 C + F#：「增四度」，又叫「魔鬼音程」，聽起來很不安
       const notes = [36, 42];
-      if (power > 0.5) notes.push(37);    // 再加一個只差半音的音，更刺耳
+      if (power > 0.5 && !document.getElementById('gentleMode').checked) notes.push(37);    // 再加一個只差半音的音，更刺耳（溫和模式不加）
       drone.triggerAttackRelease(notes.map(midi), '1m', time, 0.6 + 0.4 * power);
     } else {
       chord = chordAt(CALM_PROGRESSION[bar % 4], 55);
@@ -515,7 +532,8 @@ function onTick(time) {
     const beats = power > 0.75 ? [0, 2, 4, 6, 8, 10, 12, 14] : power > 0.4 ? [0, 2, 8, 10] : [0, 2];
     if (beats.includes(tick)) heart.triggerAttackRelease(tick % 4 === 0 ? 'C1' : 'A0', '8n', time);
     // 詭異的高音，會顫抖，越恐怖越常出現
-    if ((tick === 4 || tick === 12) && Math.random() < 0.3 + 0.6 * power) {
+    const gentle = document.getElementById('gentleMode').checked;
+    if ((tick === 4 || tick === 12) && Math.random() < (gentle ? 0.15 : 0.3 + 0.6 * power)) {
       const scary = [73, 78, 83][Math.floor(Math.random() * 3)];
       eerie.triggerAttackRelease(midi(scary), '2n', time);
     }
@@ -687,6 +705,28 @@ function pickSegment() {
   return null;
 }
 
+// ---------- 盲聽測試：把每一位玩家的作答累計起來 ----------
+// 存在這台電腦的瀏覽器裡，所以在會場找好幾個人玩，結果會一直累積
+function loadBlind() {
+  try { return JSON.parse(localStorage.getItem('ms_blindTest')) || { heaven: [0, 0], calm: [0, 0], horror: [0, 0] }; }
+  catch (e) { return { heaven: [0, 0], calm: [0, 0], horror: [0, 0] }; }
+}
+function saveBlind(data) {
+  try { localStorage.setItem('ms_blindTest', JSON.stringify(data)); } catch (e) { /* 存不了就算了 */ }
+}
+function showBlind() {
+  const data = loadBlind();
+  const correct = data.heaven[0] + data.calm[0] + data.horror[0];
+  const total = data.heaven[1] + data.calm[1] + data.horror[1];
+  const pct = ([c, t]) => (t ? Math.round(c / t * 100) + '%' : '–');
+  document.getElementById('blindStats').innerHTML = total === 0
+    ? 'Blind listening test: no answers yet.'
+    : '<b style="color:#e8e8e8">Blind listening test: ' + correct + ' / ' + total + ' correct (' + Math.round(correct / total * 100) + '%)</b>' +
+      ' · Rising ' + pct(data.heaven) + ' · Flat ' + pct(data.calm) + ' · Falling ' + pct(data.horror);
+}
+document.getElementById('resetBlind').addEventListener('click', () => { saveBlind({ heaven: [0, 0], calm: [0, 0], horror: [0, 0] }); showBlind(); });
+showBlind();
+
 function updateRoundText() {
   document.getElementById('roundText').textContent =
     'Round ' + Math.min(round, ROUNDS) + ' / ' + ROUNDS + ' · Score ' + score;
@@ -718,6 +758,11 @@ function guess(choice) {
   answered = true;
   stop();
   if (choice === answer) score++;
+  const blind = loadBlind();                 // 記到盲聽測試的總成績
+  blind[answer][1]++;
+  if (choice === answer) blind[answer][0]++;
+  saveBlind(blind);
+  showBlind();
   hideAnswer = false;
   document.getElementById('cover').classList.add('hidden');   // 揭曉圖表
   document.getElementById('feedback').textContent =

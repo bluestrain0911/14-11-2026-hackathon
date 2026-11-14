@@ -244,7 +244,8 @@ function surviveStep(i) {
 
   // 恐怖得很厲害時，偶爾有鬼跳出來
   const now = performance.now();
-  if (moods[i] === 'horror' && intensity[i] > 0.6 && now - lastGhost > 8000 && Math.random() < 0.15) {
+  if (!document.getElementById('gentleMode').checked &&
+      moods[i] === 'horror' && intensity[i] > 0.6 && now - lastGhost > 8000 && Math.random() < 0.15) {
     ghostUntil = now + 450; lastGhost = now;
     screamNoise.triggerAttackRelease('8n');
     screamTone.triggerAttackRelease(900, 0.5);
@@ -358,6 +359,19 @@ function triggerShield(i) {
 }
 
 document.getElementById('shieldBtn').addEventListener('click', armShield);
+
+// 不看螢幕也能玩：按 B 用語音唸出現在的狀況
+function speakStatus() {
+  if (!surviving) return;
+  const i = Math.max(0, lastIndex);
+  const profit = Math.round(money - START_MONEY);
+  const where = position === 1 ? 'You are long.' : position === -1 ? 'You are short.' : 'You are in cash.';
+  const market = { heaven: 'The market is rising', horror: 'The market is falling', calm: 'The market is flat' }[moods[i] || 'calm'];
+  const strength = moods[i] === 'calm' ? '.' : intensity[i] > 0.6 ? ', strongly.' : ', gently.';
+  speakLine('Balance ' + Math.round(money) + ' dollars, ' + (profit >= 0 ? 'up ' : 'down ') + Math.abs(profit) + '. ' +
+            where + ' ' + market + strength + ' ' + shields + ' shields left' + (shieldArmed ? ', shield on.' : '.'), 'calm');
+}
+document.getElementById('statusBtn').addEventListener('click', speakStatus);
 document.getElementById('buyBtn').addEventListener('click', () => setPosition(1));
 document.getElementById('cashBtn').addEventListener('click', () => setPosition(0));
 document.getElementById('sellBtn').addEventListener('click', () => setPosition(-1));
@@ -370,6 +384,7 @@ document.addEventListener('keydown', event => {
   if (event.key === ' ') { setPosition(0); event.preventDefault(); }
   if (event.key === 'p') togglePause();
   if (event.key === 'e') armShield();
+  if (event.key === 'b') speakStatus();
 });
 
 function updateStats() {
@@ -484,7 +499,7 @@ function drawStage(t) {
     ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center';
     ctx.font = 'bold 72px system-ui'; ctx.fillText(String(Math.ceil(left / 1000)), W / 2, H / 2 + 10);
-    ctx.font = '18px system-ui'; ctx.fillText('W / ⬆ = Buy    S / ⬇ = Sell    Space = Cash    P = Pause', W / 2, H / 2 + 50);
+    ctx.font = '16px system-ui'; ctx.fillText('W/⬆ Buy · S/⬇ Sell · Space Cash · E Shield · B Status · P Pause', W / 2, H / 2 + 50);
     ctx.textAlign = 'left';
   }
 
