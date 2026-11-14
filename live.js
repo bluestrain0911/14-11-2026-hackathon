@@ -86,6 +86,7 @@ const realDays = Object.keys(datasets).filter(name => !name.startsWith('Demo'));
 let shownIndex = [];         // 圖上每個點對應到資料的第幾筆
 let liveFrom = 0;            // 從第幾筆開始「即時」播放（= 90% 的位置）
 let liveEvery = 1;           // 即時部分每幾筆畫一個點
+let liveShown = [];          // 目前圖上畫的是哪些資料
 
 // 把選到的資料接成一條連續的時間序列
 function buildSeries(choice) {
@@ -129,7 +130,7 @@ async function startLive() {
   liveFrom = Math.floor(prices.length * 0.9);
   step = liveFrom;
   const historyEvery = Math.max(1, Math.ceil(liveFrom / 500));
-  liveEvery = Math.max(1, Math.ceil((prices.length - liveFrom) / 500));
+  liveEvery = 1;                  // 即時進來的每一筆都畫出來
   shownIndex = [];
   for (let k = 0; k < liveFrom; k += historyEvery) shownIndex.push(k);
   liveLastWarn = warnLevel[step] || 0;
@@ -137,7 +138,7 @@ async function startLive() {
 
   chart.data.datasets[0].segment = {
     // 歷史 = 灰色實線；即時的部分 = 依照情緒上色
-    borderColor: ctx => shownIndex[ctx.p0DataIndex] < liveFrom ? '#6b7385' : lineColor(shownIndex[ctx.p0DataIndex])
+    borderColor: ctx => liveShown[ctx.p0DataIndex] < liveFrom ? '#6b7385' : lineColor(liveShown[ctx.p0DataIndex])
   };
   document.getElementById('liveStatus').textContent =
     'History (grey line, first 90%): ' + times[0] + ' → ' + times[liveFrom] + '. Live from ' + times[liveFrom] +
@@ -173,11 +174,19 @@ function stopLive() {
 
 // 每一筆新資料送到時（由 updateScreen 呼叫）
 function liveStep(i) {
-  // 圖表：前 90% 的歷史（灰色虛線）+ 即時進來的新資料（依照情緒上色）
-  if (i >= liveFrom && ((i - liveFrom) % liveEvery === 0 || shownIndex[shownIndex.length - 1] < i - liveEvery)) {
-    if (shownIndex[shownIndex.length - 1] !== i) shownIndex.push(i);
+  // 圖表有兩種看法：
+  //   近期（預設）：只看最近 4 小時，每分鐘一個點，線會一直往左捲，看得出在動
+  //   全部：前 90% 的歷史（抽樣）+ 即時進來的每一筆
+  if (i >= liveFrom && shownIndex[shownIndex.length - 1] !== i) shownIndex.push(i);
+  let shown;
+  if (document.getElementById('liveView').value === 'recent') {
+    const from = Math.max(0, i - 239);
+    shown = [];
+    for (let k = from; k <= i; k++) shown.push(k);
+  } else {
+    shown = shownIndex[shownIndex.length - 1] === i ? shownIndex : shownIndex.concat([i]);
   }
-  const shown = shownIndex[shownIndex.length - 1] === i ? shownIndex : shownIndex.concat([i]);
+  liveShown = shown;
   chart.data.labels = shown.map(k => times[k]);
   chart.data.datasets[0].data = shown.map(k => prices[k]);
   const marker = shown.map(() => null);
@@ -252,4 +261,5 @@ document.getElementById('outageBtn').addEventListener('click', () => {
 });
 
 document.getElementById('liveStartBtn').addEventListener('click', startLive);
+document.getElementById('liveView').addEventListener('change', () => { if (liveActive) liveStep(step); });
 document.getElementById('liveStopBtn').addEventListener('click', stopLive);
