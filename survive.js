@@ -68,11 +68,11 @@ function crowdGroan() {                      // 「噢～～」：聲音往下�
 // 裁判哨
 const whistleSynth = new Tone.Synth({ oscillator: { type: 'sine' },
   envelope: { attack: 0.01, decay: 0.05, sustain: 0.9, release: 0.05 } }).toDestination();
-whistleSynth.volume.value = -10;
+whistleSynth.volume.value = -22;              // 小聲一點，不要刺耳
 function whistle(times, long) {
   for (let k = 0; k < times; k++) {
     const start = Tone.now() + k * 0.45;
-    whistleSynth.triggerAttackRelease(2900, long && k === times - 1 ? 0.9 : 0.25, start);
+    whistleSynth.triggerAttackRelease(1800, long && k === times - 1 ? 0.5 : 0.18, start);
   }
 }
 
@@ -152,7 +152,6 @@ function startSurvival() {
   });
   setTimeout(() => {
     if (!surviving) return;
-    whistle(1, true);                         // 開球哨
     play();
     narrate('kickoff', { time: times[0] }, true);
   }, 3000);
