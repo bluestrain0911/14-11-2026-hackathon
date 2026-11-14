@@ -12,7 +12,7 @@
 const START_MONEY = 10000;
 const NOTIONAL = 1000000;        // 每次交易 100 萬歐元
 const SWITCH_COST = 20;          // 每次換方向的手續費（買賣價差，約 0.2 pip）
-const GAME_STEPS = 160;          // 一局播幾步（幾分鐘的資料）
+const GAME_STEPS = 120;          // 一局播幾步（幾分鐘的資料），慢速下大約 1.5 分鐘
 
 let surviving = false;           // 是否正在玩生存模式
 let money = START_MONEY;
@@ -30,6 +30,8 @@ let popups = [];                 // 浮出來的「+$420」文字
 let ghostUntil = 0;              // 鬼出現到什麼時候
 let lastGhost = 0;
 let frameTime = 0;
+let countdownEnd = 0;            // 開局倒數 3、2、1 到什麼時候
+let paused = false;
 
 // 嚇人的尖叫聲（雜訊 + 快速下降的音）
 const screamNoise = new Tone.NoiseSynth({ envelope: { attack: 0.005, decay: 0.5, sustain: 0 } }).toDestination();
@@ -66,9 +68,24 @@ function startSurvival() {
   document.getElementById('narratorText').textContent = '';
   step = 0;
   onFinished = endSurvival;
-  play();
-  narrate('calm', { time: times[0] }, true);
+  paused = false;
+  // 先倒數 3 秒，讓玩家準備好，再開始播
+  countdownEnd = performance.now() + 3000;
+  setTimeout(() => {
+    if (!surviving) return;
+    play();
+    narrate('calm', { time: times[0] }, true);
+  }, 3000);
 }
+
+// 暫停／繼續
+function togglePause() {
+  if (!surviving || gameOver || loopId === null) return;
+  paused = !paused;
+  if (paused) Tone.Transport.pause(); else Tone.Transport.start();
+  document.getElementById('pauseBtn').textContent = paused ? '▶ Resume (P)' : '⏸ Pause (P)';
+}
+document.getElementById('pauseBtn').addEventListener('click', togglePause);
 
 // ---------- 每走一步（由主程式的 updateScreen 呼叫） ----------
 function surviveStep(i) {
@@ -153,6 +170,7 @@ document.addEventListener('keydown', event => {
   if (event.key === 'ArrowUp' || event.key === 'w') { setPosition(1); event.preventDefault(); }
   if (event.key === 'ArrowDown' || event.key === 's') { setPosition(-1); event.preventDefault(); }
   if (event.key === ' ') { setPosition(0); event.preventDefault(); }
+  if (event.key === 'p') togglePause();
 });
 
 function updateStats() {
@@ -235,6 +253,34 @@ function drawStage(t) {
     ctx.fillText(p.text, W / 2 + 60, H / 2 - p.y);
     ctx.globalAlpha = 1;
   });
+
+  // 提示：告訴新手「現在的音樂代表什麼、可以怎麼做」
+  if (surviving && !gameOver && document.getElementById('hintsOn').checked && performance.now() > countdownEnd) {
+    const hint = mood === 'heaven' ? '♪ Heaven music → price is rising → try ⬆ Buy'
+               : mood === 'horror' ? '♪ Horror music → price is falling → try ⬇ Sell'
+               : '♪ Calm music → price is flat → stay in 💵 Cash';
+    ctx.font = 'bold 18px system-ui';
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(10, 10, ctx.measureText(hint).width + 20, 32);
+    ctx.fillStyle = mood === 'heaven' ? '#f5c542' : mood === 'horror' ? '#ff6b6b' : '#cfd6e4';
+    ctx.fillText(hint, 20, 33);
+  }
+
+  // 開局倒數
+  const left = countdownEnd - performance.now();
+  if (surviving && left > 0) {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center';
+    ctx.font = 'bold 72px system-ui'; ctx.fillText(String(Math.ceil(left / 1000)), W / 2, H / 2 + 10);
+    ctx.font = '18px system-ui'; ctx.fillText('W / ⬆ = Buy    S / ⬇ = Sell    Space = Cash    P = Pause', W / 2, H / 2 + 50);
+    ctx.textAlign = 'left';
+  }
+
+  // 暫停畫面
+  if (paused) {
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#ffffff'; ctx.font = 'bold 40px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText('PAUSED', W / 2, H / 2); ctx.textAlign = 'left';
+  }
 
   // 輸光畫面
   if (gameOver && money <= 0) {

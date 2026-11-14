@@ -68,6 +68,15 @@
       <button id="cashBtn" style="background:#4a5263">💵 Cash (Space)</button>
       <button id="sellBtn" style="background:#b3262a">⬇ Sell (S)</button>
       <button id="surviveStart">▶ Start trading</button>
+      <button id="pauseBtn" style="background:#262a33">⏸ Pause (P)</button>
+    </div>
+    <div class="controls" style="margin:4px 0;">
+      <select id="surviveSpeed">
+        <option value="6">Speed: super slow</option>
+        <option value="4" selected>Speed: slow</option>
+        <option value="2">Speed: normal</option>
+      </select>
+      <label><input id="hintsOn" type="checkbox" checked> Show hints (what the music means)</label>
     </div>
     <div id="surviveMessage" class="feedback">You have $10,000. Each pip the euro moves = $100. Listen to the music: heaven means rising, horror means falling. Don't go broke!</div>
     <div id="narratorText" class="feedback" style="color:#f5c542; margin-top:8px;"></div>
@@ -456,7 +465,8 @@ function onTick(time) {
   Tone.Draw.schedule(() => updateScreen(i), time);
 
   // 每隔幾個 16 分音符才前進一筆資料（越大，橘點走得越慢）
-  const every = Number(document.getElementById('speedSelect').value);
+  const speedId = typeof surviving !== 'undefined' && surviving ? 'surviveSpeed' : 'speedSelect';
+  const every = Number(document.getElementById(speedId).value);
   if (tick % every === every - 1) step++;
   tick = (tick + 1) % 16;
 }
