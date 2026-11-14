@@ -90,6 +90,27 @@ let lastGoalStep = -99;
 let lastGroanStep = -99;
 let streak = 0;              // 連續賺錢幾步
 
+// ---------- 停損盾牌 🛡️ ----------
+// 每局 3 個。開啟後，這筆交易如果虧超過 $500，就自動幫你逃回現金。
+// 這就是真實交易裡的「停損單」（stop-loss）：事先決定最多願意虧多少，到了就自動出場。
+const SHIELD_LIMIT = 500;
+let shields = 3, shieldArmed = false, shieldBase = 0;
+
+// ---------- 賽後報告要用的紀錄 ----------
+let trades = [];             // 每一筆交易：方向、開始和結束的時間、賺賠
+let tradeStart = null;       // 目前這筆交易從什麼時候、多少錢開始
+let alignedSteps = 0;        // 有幾步你的操作「跟著音樂」
+let shieldSaves = 0, goals = 0, groans = 0, lowestMoney = START_MONEY;
+
+// 盾牌擋下來時「鏘！」的金屬聲
+const clang = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.4, release: 0.2 },
+  harmonicity: 5.1, modulationIndex: 32, resonance: 3000, octaves: 1.5 }).toDestination();
+clang.volume.value = -12;
+
+function bestScore() {
+  try { return Number(localStorage.getItem('ms_bestProfit')); } catch (e) { return NaN; }
+}
+
 // ---------- 開始一局 ----------
 function startSurvival() {
   // 隨機挑一天，從「最劇烈的時刻」之前 40～100 分鐘開始，確保一定會遇到風暴
@@ -107,6 +128,10 @@ function startSurvival() {
 
   money = START_MONEY; peakMoney = START_MONEY; position = 0; lastIndex = -1;
   moneyHistory = []; lastGoalStep = -99; lastGroanStep = -99; streak = 0;
+  shields = 3; shieldArmed = false; shieldBase = 0;
+  trades = []; tradeStart = null; alignedSteps = 0;
+  shieldSaves = 0; goals = 0; groans = 0; lowestMoney = START_MONEY;
+  document.getElementById('reportBox').classList.add('hidden');
   lastMood = 'calm'; gameOver = false; particles = []; popups = [];
   surviving = true;
   drawChart();
@@ -168,7 +193,14 @@ function surviveStep(i) {
     }
   }
   moneyHistory.push(money);
+  lowestMoney = Math.min(lowestMoney, money);
+  // 你的操作有沒有「跟著音樂」：天堂時買、恐怖時賣、平靜時拿現金
+  const follow = { heaven: 1, horror: -1, calm: 0 }[moods[i]];
+  if (position === follow) alignedSteps++;
   lastIndex = i;
+
+  // 盾牌：這筆交易虧超過 $500 → 自動逃回現金
+  if (shieldArmed && position !== 0 && money < shieldBase - SHIELD_LIMIT) triggerShield(i);
   peakMoney = Math.max(peakMoney, money);
 
   // 觀眾的音量跟著市場有多激烈
@@ -183,6 +215,7 @@ function surviveStep(i) {
       particles.push({ x: Math.random() * stage.width, y: -Math.random() * 60, vy: 80 + Math.random() * 120,
                        kind: 'confetti', color: ['#f5c542', '#3ecf8e', '#4f8cff', '#ff6b6b', '#ffffff'][k % 5] });
     }
+    goals++;
     crowdRoar(); hornBlast();
     narrate('goal', { gained: Math.round(gained), balance: Math.round(money), time: times[i] }, true);
   }
@@ -190,6 +223,7 @@ function surviveStep(i) {
   if (gained <= -800 && i - lastGroanStep > 8) {
     lastGroanStep = i;
     popups.push({ text: 'OOOH! -$' + Math.round(-gained).toLocaleString(), color: '#ff4d4f', y: -40, life: 1.6, big: true });
+    groans++;
     crowdGroan();
     narrate('losing', { lost: Math.round(-gained), balance: Math.round(money), time: times[i] }, true);
   }
@@ -229,6 +263,8 @@ function surviveStep(i) {
     setTimeout(() => crowdGain.gain.rampTo(0, 2), 2500);
     narrate('marginCall', facts, true);
     finishText('MARGIN CALL! You went broke at ' + times[i] + '.');
+    closeTrade();
+    setTimeout(() => showReport(matchStats(true)), 2500);
   }
   updateStats();
 }
@@ -240,9 +276,45 @@ function endSurvival() {
   whistle(3, true);                            // 終場哨：嗶、嗶、嗶～～
   if (result > 0) { crowdRoar(); hornBlast(); } else crowdGroan();
   setTimeout(() => crowdGain.gain.rampTo(0, 2), 3000);
-  narrate(result > 0 ? 'end' : 'endLoss', { finalBalance: Math.round(money), profit: Math.round(result) }, true);
+  // 個人最佳紀錄
+  const best = bestScore();
+  const newBest = isNaN(best) || result > best;
+  if (newBest) {
+    try { localStorage.setItem('ms_bestProfit', String(Math.round(result))); } catch (e) { /* 存不了就算了 */ }
+    popups.push({ text: '🏆 NEW PERSONAL BEST!', color: '#f5c542', y: -80, life: 2.5, big: true });
+  }
+  narrate(newBest ? 'newBest' : result > 0 ? 'end' : 'endLoss',
+          { finalBalance: Math.round(money), profit: Math.round(result) }, true);
   finishText('FULL TIME! You finished with $' + Math.round(money).toLocaleString() +
-             ' (' + (result >= 0 ? '+' : '') + Math.round(result / START_MONEY * 100) + '%).');
+             ' (' + (result >= 0 ? '+' : '') + Math.round(result / START_MONEY * 100) + '%).' +
+             (newBest ? ' 🏆 New personal best!' : ''));
+  closeTrade();
+  setTimeout(() => showReport(matchStats(false)), 2500);
+}
+
+// 結束目前這筆交易，記到紀錄裡
+function closeTrade() {
+  if (position !== 0 && tradeStart) {
+    trades.push({ side: position === 1 ? 'long' : 'short', from: tradeStart.time,
+                  to: times[Math.max(0, lastIndex)], pnl: Math.round(money - tradeStart.money) });
+  }
+  tradeStart = null;
+}
+
+// 整理這一局的數據，給賽後報告用
+function matchStats(brokeOut) {
+  const sorted = trades.slice().sort((a, b) => b.pnl - a.pnl);
+  return {
+    day: document.getElementById('surviveDay')?.textContent || '',
+    from: times[0], to: times[times.length - 1],
+    finalBalance: Math.round(money), profit: Math.round(money - START_MONEY),
+    wentBroke: brokeOut,
+    trades: trades.length, bestTrade: sorted[0] || null, worstTrade: sorted[sorted.length - 1] || null,
+    followedMusicPercent: Math.round(alignedSteps / Math.max(1, lastIndex + 1) * 100),
+    shieldsUsed: 3 - shields, shieldSaves: shieldSaves, goals: goals, bigLosses: groans,
+    lowestBalance: Math.round(lowestMoney),
+    tradeLog: trades.slice(0, 20)
+  };
 }
 
 function finishText(message) {
@@ -255,14 +327,38 @@ function finishText(message) {
 // ---------- 操作：買、賣、逃跑 ----------
 function setPosition(newPosition) {
   if (!surviving || gameOver || newPosition === position) return;
+  closeTrade();                                                     // 上一筆交易結束，記下來
   if (position !== 0 || newPosition !== 0) money -= SWITCH_COST;   // 換方向要付一點手續費
   position = newPosition;
+  if (position !== 0) tradeStart = { money: money, time: times[Math.max(0, lastIndex)] };
+  if (shieldArmed) shieldBase = money;                              // 盾牌跟著新的交易重新計算
   updateStats();
   // 播報員評論你的動作（球評在講球員）
   const event = newPosition === 1 ? 'playerLong' : newPosition === -1 ? 'playerShort' : 'playerCash';
   narrate(event, { mood: moods[Math.max(0, lastIndex)], balance: Math.round(money) }, false);
 }
 
+// 開啟盾牌
+function armShield() {
+  if (!surviving || gameOver || shieldArmed || shields <= 0) return;
+  shields--; shieldArmed = true; shieldBase = money;
+  popups.push({ text: '🛡 SHIELD ON (max loss $' + SHIELD_LIMIT + ')', color: '#7ec8ff', y: -20, life: 1.4 });
+  clang.triggerAttackRelease('C4', '16n');
+  updateStats();
+}
+
+// 盾牌擋下來了
+function triggerShield(i) {
+  const saved = Math.round(shieldBase - money);
+  shieldArmed = false;
+  shieldSaves++;
+  setPosition(0);
+  popups.push({ text: '🛡 SHIELD SAVED YOU! (-$' + saved + ')', color: '#7ec8ff', y: -40, life: 2, big: true });
+  clang.triggerAttackRelease('C3', '8n');
+  narrate('shield', { time: times[i], lossCapped: saved, balance: Math.round(money) }, true);
+}
+
+document.getElementById('shieldBtn').addEventListener('click', armShield);
 document.getElementById('buyBtn').addEventListener('click', () => setPosition(1));
 document.getElementById('cashBtn').addEventListener('click', () => setPosition(0));
 document.getElementById('sellBtn').addEventListener('click', () => setPosition(-1));
@@ -274,6 +370,7 @@ document.addEventListener('keydown', event => {
   if (event.key === 'ArrowDown' || event.key === 's') { setPosition(-1); event.preventDefault(); }
   if (event.key === ' ') { setPosition(0); event.preventDefault(); }
   if (event.key === 'p') togglePause();
+  if (event.key === 'e') armShield();
 });
 
 function updateStats() {
@@ -282,6 +379,8 @@ function updateStats() {
   const profitText = document.getElementById('profitText');
   profitText.textContent = (profit >= 0 ? '+$' : '-$') + Math.abs(Math.round(profit)).toLocaleString();
   profitText.style.color = profit >= 0 ? '#3ecf8e' : '#ff4d4f';
+  document.getElementById('shieldText').textContent =
+    (shieldArmed ? '🛡 ON  ' : '') + shields + ' left';
   document.getElementById('positionText').textContent =
     position === 1 ? '⬆ Long (betting up)' : position === -1 ? '⬇ Short (betting down)' : '💵 Cash (safe)';
 }
@@ -425,6 +524,13 @@ function drawScoreboard(W, t) {
   ctx.font = 'bold 18px system-ui'; ctx.fillStyle = profit >= 0 ? '#3ecf8e' : '#ff4d4f';
   ctx.fillText('YOU  ' + (profit >= 0 ? '+' : '-') + '$' + Math.abs(Math.round(profit)).toLocaleString(), x + 64, y + 37);
   if (streak >= 3) { ctx.fillStyle = '#ff9f1c'; ctx.fillText('🔥' + streak, x + 236, y + 37); }
+  // 盾牌數量和個人最佳紀錄
+  ctx.fillStyle = 'rgba(10,12,18,0.85)'; ctx.fillRect(x, y + 48, 290, 26);
+  ctx.font = '14px system-ui'; ctx.fillStyle = shieldArmed ? '#7ec8ff' : '#9aa0a6';
+  ctx.fillText('🛡'.repeat(shields) + (shieldArmed ? '  ON' : '') + (shields === 0 && !shieldArmed ? 'no shields' : ''), x + 8, y + 66);
+  const best = bestScore();
+  ctx.fillStyle = '#f5c542';
+  if (!isNaN(best)) ctx.fillText('BEST ' + (best >= 0 ? '+' : '-') + '$' + Math.abs(best).toLocaleString(), x + 170, y + 66);
 }
 
 // 畫一個像素風的交易員

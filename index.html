@@ -61,15 +61,17 @@
   <!-- 生存模式：交易員小遊戲 -->
   <div id="survivePanel" class="game hidden">
     <canvas id="stage" width="720" height="240" style="width:100%; border-radius:10px; display:block;"></canvas>
-    <div class="info" style="grid-template-columns: repeat(3, 1fr); margin-top: 12px;">
+    <div class="info" style="grid-template-columns: repeat(4, 1fr); margin-top: 12px;">
       <div class="card">Money<b id="moneyText">$10,000</b></div>
       <div class="card">Profit<b id="profitText">+$0</b></div>
       <div class="card">Position<b id="positionText">💵 Cash (safe)</b></div>
+      <div class="card">Shields<b id="shieldText">3 left</b></div>
     </div>
     <div class="answers">
       <button id="buyBtn" style="background:#b8901c">⬆ Buy (W)</button>
       <button id="cashBtn" style="background:#4a5263">💵 Cash (Space)</button>
       <button id="sellBtn" style="background:#b3262a">⬇ Sell (S)</button>
+      <button id="shieldBtn" style="background:#2c5d8a">🛡 Shield (E)</button>
       <button id="surviveStart">▶ Start trading</button>
       <button id="pauseBtn" style="background:#262a33">⏸ Pause (P)</button>
     </div>
@@ -81,8 +83,10 @@
       </select>
       <label><input id="hintsOn" type="checkbox" checked> Show hints (what the music means)</label>
     </div>
-    <div id="surviveMessage" class="feedback">You have $10,000. Each pip the euro moves = $100. Listen to the music: heaven means rising, horror means falling. Don't go broke!</div>
+    <div id="surviveMessage" class="feedback">You have $10,000. Each pip the euro moves = $100. Listen to the music: heaven means rising, horror means falling. Press 🛡 (E) to protect a trade: it auto-exits if you lose $500. Don't go broke!</div>
     <div id="narratorText" class="feedback" style="color:#f5c542; margin-top:8px;"></div>
+    <!-- 賽後報告 -->
+    <div id="reportBox" class="hidden" style="margin-top:16px; background:#0f1115; border:1px solid #2a2e36; border-radius:12px; padding:16px;"></div>
     <details style="margin-top:12px; color:#9aa0a6;">
       <summary>🎙 Narrator settings (optional Gemini / ElevenLabs keys)</summary>
       <p style="font-size:13px;">Without keys the narrator uses built-in lines and your browser's voice. Keys stay in this browser only — never put them in the code or on GitHub.</p>
@@ -775,5 +779,6 @@ loadData(datasets[Object.keys(datasets)[0]]);
 <!-- 播報員和生存遊戲放在另外兩個檔案（要和 index.html 放在同一個資料夾） -->
 <script src="narrator.js"></script>
 <script src="survive.js"></script>
+<script src="report.js"></script>
 </body>
 </html>

@@ -78,6 +78,14 @@ const LINES = {
     "They're going short! Betting on the fall!",
     "Selling! Brave, very brave!"
   ],
+  shield: [
+    "Saved by the shield! What a defensive play!",
+    "The stop-loss kicks in! Disaster averted!"
+  ],
+  newBest: [
+    "A new personal best! Absolutely sensational!",
+    "That's a new record! Take a bow!"
+  ],
   playerCash: [
     "Back to cash. Playing it safe.",
     "They've pulled out! Sitting on the bench for now."
@@ -112,6 +120,12 @@ async function narrate(event, facts, force) {
     if (setting('geminiKey')) line = await askGemini(event, facts) || line;
   } catch (e) { console.warn('Gemini failed, using built-in line', e); }
 
+  await speakLine(line, event);
+  speaking = false;
+}
+
+// 直接唸出一句指定的話（賽後報告會用到）
+async function speakLine(line, event) {
   document.getElementById('narratorText').textContent = '🎙 ' + line;
   try {
     if (setting('elevenKey')) await speakEleven(line, event);
@@ -120,7 +134,6 @@ async function narrate(event, facts, force) {
     console.warn('ElevenLabs failed, using browser voice', e);
     await speakBrowser(line, event);
   }
-  speaking = false;
 }
 
 function pickLine(event) {
@@ -130,7 +143,6 @@ function pickLine(event) {
 
 // ---------- Gemini：寫一句即時評論 ----------
 async function askGemini(event, facts) {
-  const model = setting('geminiModel') || 'gemini-2.5-flash';
   const prompt =
     'You are an excited British football commentator doing live play-by-play of a EUR/USD currency market ' +
     'as if it were a match; the player is the trader. ' +
@@ -138,6 +150,13 @@ async function askGemini(event, facts) {
     'use contractions, interjections like "oh no" or "wow", and an ellipsis or exclamation for emotion. ' +
     'Dramatic and silly, family friendly. ' +
     'Event: ' + event + '. Facts: ' + JSON.stringify(facts) + '. Reply with the sentence only.';
+  const text = await geminiGenerate(prompt);
+  return text ? text.trim().replace(/^"|"$/g, '') : null;
+}
+
+// 呼叫 Gemini：送出一段提示，拿回一段文字（播報和賽後報告都用這個）
+async function geminiGenerate(prompt) {
+  const model = setting('geminiModel') || 'gemini-2.5-flash';
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model +
               ':generateContent?key=' + encodeURIComponent(setting('geminiKey'));
   const response = await fetch(url, {
@@ -147,8 +166,7 @@ async function askGemini(event, facts) {
   });
   if (!response.ok) throw new Error('Gemini HTTP ' + response.status);
   const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  return text ? text.trim().replace(/^"|"$/g, '') : null;
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
 }
 
 // ---------- ElevenLabs：把句子變成聲音 ----------
@@ -171,6 +189,8 @@ async function speakEleven(line, event) {
 // ---------- 備案：瀏覽器內建語音（免費） ----------
 // 每種情緒用不同的語速和音高：恐怖 = 慢、低沉；暴衝 = 快、激動；天堂 = 輕快、高一點
 const MOOD_VOICE = {
+  shield:      { rate: 1.2,  pitch: 1.1 },
+  newBest:     { rate: 1.25, pitch: 1.3 },
   goal:        { rate: 1.3,  pitch: 1.3 },
   losing:      { rate: 1.1,  pitch: 0.8 },
   streak:      { rate: 1.25, pitch: 1.2 },
