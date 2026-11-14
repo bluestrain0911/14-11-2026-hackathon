@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Market Symphony</title>
+
+<!-- 載入兩個外部函式庫（需要網路）：
+     Chart.js 負責畫圖，Tone.js 負責在瀏覽器裡發出聲音 -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.js"></script>
+
+<style>
+  /* ===== 外觀設定（CSS）：只影響長相，不影響功能 ===== */
+  body {
+    font-family: system-ui, sans-serif;
+    background: #0f1115;
+    color: #e8e8e8;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+  h1 { font-weight: 600; margin-bottom: 4px; }
+  .subtitle { color: #9aa0a6; margin-top: 0; }
+  .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 16px 0; }
+  button {
+    background: #2b6cff; color: white; border: none; border-radius: 8px;
+    padding: 10px 18px; font-size: 16px; cursor: pointer;
+  }
+  button:disabled { background: #444; cursor: default; }
+  .info { display: flex; gap: 24px; margin-top: 12px; color: #9aa0a6; }
+  .info b { color: #e8e8e8; font-size: 20px; }
+  .chart-box { background: #171a21; border-radius: 12px; padding: 12px; }
+</style>
+</head>
+
+<body>
+  <h1>Market Symphony</h1>
+  <p class="subtitle">Hear the market: FX prices turned into music</p>
+
+  <div class="chart-box">
+    <canvas id="chart" height="120"></canvas>
+  </div>
+
+  <div class="controls">
+    <button id="playBtn">▶ Play</button>
+    <button id="stopBtn" disabled>■ Stop</button>
+    <label>Speed
+      <input id="speed" type="range" min="1" max="20" value="8">
+    </label>
+    <label>Load CSV
+      <input id="fileInput" type="file" accept=".csv">
+    </label>
+  </div>
+
+  <div class="info">
+    <div>Price<br><b id="priceText">-</b></div>
+    <div>Note<br><b id="noteText">-</b></div>
+    <div>Progress<br><b id="progressText">0%</b></div>
+  </div>
+
+<script>
+// =====================================================================
+// 第一階段：讀資料 → 畫圖 → 按 Play 後，價格變成音高
+// =====================================================================
+
+// ---------- 1. 準備資料 ----------
+// prices 是一個陣列（一串數字），每個數字代表某個時間點的價格。
+let prices = [];
+
+// 產生「假資料」：前半段很平穩，後半段突然暴跌（模擬市場風暴）。
+// 等拿到 SGX FX 的真資料，就用頁面上的「Load CSV」換掉它。
+function makeFakeData() {
+  const data = [];
+  let price = 1.30;                       // 起始價格，例如 1 英鎊 = 1.30 美元
+  for (let i = 0; i < 200; i++) {
+    const stormy = i > 120;               // 第 120 筆之後進入「風暴」
+    const size = stormy ? 0.012 : 0.002;  // 風暴時每一步的變動比較大
+    const drift = stormy ? -0.004 : 0;    // 風暴時整體往下跌
+    price = price + drift + (Math.random() - 0.5) * size;
+    data.push(Number(price.toFixed(4)));
+  }
+  return data;
+}
+
+// 讀取使用者上傳的 CSV 檔。
+// 會自動抓每一行「最後一個是數字的欄位」當作價格，第一行如果是標題會自動跳過。
+function parseCsv(text) {
+  const result = [];
+  for (const line of text.split(/\r?\n/)) {
+    const cells = line.split(',');
+    for (let i = cells.length - 1; i >= 0; i--) {
+      const value = parseFloat(cells[i]);
+      if (!isNaN(value)) { result.push(value); break; }
+    }
+  }
+  return result;
+}
+
+// ---------- 2. 畫圖 ----------
+const chart = new Chart(document.getElementById('chart'), {
+  type: 'line',
+  data: {
+    labels: [],
+    datasets: [
+      { label: 'Price', data: [], borderColor: '#4f8cff', pointRadius: 0, borderWidth: 2 },
+      // 第二條線只畫一個點：目前播放到的位置（橘色圓點）
+      { label: 'Now', data: [], borderColor: '#ff7a45', backgroundColor: '#ff7a45',
+        pointRadius: 6, showLine: false }
+    ]
+  },
+  options: {
+    animation: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { display: false },
+      y: { ticks: { color: '#9aa0a6' }, grid: { color: '#2a2e36' } }
+    }
+  }
+});
+
+// 把 prices 裡的資料畫到圖上
+function drawChart() {
+  chart.data.labels = prices.map((_, i) => i);
+  chart.data.datasets[0].data = prices;
+  chart.data.datasets[1].data = prices.map(() => null);
+  chart.update();
+}
+
+// ---------- 3. 價格 → 音高 ----------
+// 用「五聲音階」：不管怎麼組合都不會太難聽，很適合做第一版。
+const SCALE = ['C', 'D', 'E', 'G', 'A'];
+
+// 把一個價格換算成一個音符，例如 "E4"。
+// 做法：先算出這個價格在「最低價～最高價」之間的位置（0 到 1），
+// 再對應到 3 個八度、共 15 個音裡的其中一個。最低價 = 最低音，最高價 = 最高音。
+function priceToNote(price) {
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  const position = (price - min) / (max - min || 1);
+  const steps = SCALE.length * 3;
+  const index = Math.round(position * (steps - 1));
+  const octave = 3 + Math.floor(index / SCALE.length);
+  return SCALE[index % SCALE.length] + octave;
+}
+
+// 樂器：一個簡單的合成器（三角波，聲音比較柔和）
+const synth = new Tone.Synth({
+  oscillator: { type: 'triangle' },
+  envelope: { attack: 0.01, decay: 0.2, sustain: 0.2, release: 0.4 }
+}).toDestination();
+
+// ---------- 4. 播放 ----------
+let step = 0;        // 目前播到第幾筆資料
+let timer = null;    // 計時器，負責每隔一段時間播下一個音
+
+// 播放一筆資料：發出聲音 + 更新圖上的橘點和下方的文字
+function playStep() {
+  if (step >= prices.length) { stop(); return; }
+
+  const price = prices[step];
+  const note = priceToNote(price);
+  synth.triggerAttackRelease(note, '16n');   // 發出聲音，長度是 16 分音符
+
+  const marker = prices.map(() => null);
+  marker[step] = price;
+  chart.data.datasets[1].data = marker;
+  chart.update();
+
+  document.getElementById('priceText').textContent = price.toFixed(4);
+  document.getElementById('noteText').textContent = note;
+  document.getElementById('progressText').textContent =
+    Math.round((step / (prices.length - 1)) * 100) + '%';
+
+  step++;
+}
+
+async function play() {
+  await Tone.start();   // 瀏覽器規定：要使用者按了按鈕之後才能發聲
+  if (step >= prices.length) step = 0;
+  const speed = Number(document.getElementById('speed').value);
+  timer = setInterval(playStep, 1000 / speed);   // speed = 每秒播幾個音
+  document.getElementById('playBtn').disabled = true;
+  document.getElementById('stopBtn').disabled = false;
+}
+
+function stop() {
+  clearInterval(timer);
+  document.getElementById('playBtn').disabled = false;
+  document.getElementById('stopBtn').disabled = true;
+}
+
+// ---------- 5. 把按鈕接上功能 ----------
+document.getElementById('playBtn').addEventListener('click', play);
+document.getElementById('stopBtn').addEventListener('click', stop);
+
+document.getElementById('fileInput').addEventListener('change', async (event) => {
+  const file = event.target.files[0];
+  if (!file) return;
+  const loaded = parseCsv(await file.text());
+  if (loaded.length < 2) { alert('Could not find prices in this CSV'); return; }
+  stop();
+  prices = loaded;
+  step = 0;
+  drawChart();
+});
+
+// 一打開網頁就先載入假資料並畫圖
+prices = makeFakeData();
+drawChart();
+</script>
+</body>
