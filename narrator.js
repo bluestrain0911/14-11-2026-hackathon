@@ -209,7 +209,14 @@ async function speakEleven(line, event) {
       voice_settings: { stability: event === 'pro' ? 0.8 : event === 'calm' ? 0.5 : 0.25, similarity_boost: 0.8,
                         style: event === 'pro' ? 0 : event === 'calm' ? 0.2 : 0.7, use_speaker_boost: true } })
   });
-  if (!response.ok) throw new Error('ElevenLabs HTTP ' + response.status);
+  if (!response.ok) {
+    // 把 ElevenLabs 回傳的原因顯示出來（例如金鑰沒有權限、免費方案被擋）
+    let detail = '';
+    try { const j = await response.json(); detail = (j.detail && (j.detail.message || j.detail.status || JSON.stringify(j.detail))) || ''; } catch (e) {}
+    const msg = 'ElevenLabs HTTP ' + response.status + (detail ? ' — ' + detail : '');
+    document.getElementById('narratorText').textContent = '⚠️ ' + msg + ' (using browser voice instead)';
+    throw new Error(msg);
+  }
   const audio = new Audio(URL.createObjectURL(await response.blob()));
   await audio.play();
   await new Promise(resolve => { audio.onended = resolve; });
