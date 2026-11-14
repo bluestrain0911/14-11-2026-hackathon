@@ -104,13 +104,18 @@ function buildSeries(choice) {
 
 const liveInterval = () => Number(document.getElementById('liveSpeed').value);
 
-// 由主程式的 onTick 呼叫：該不該前進到下一筆資料？
-function liveShouldAdvance() {
+// 資料「送達」：用自己的計時器，跟音樂引擎分開。
+// 這樣就算音樂卡住、分頁跑到背景，資料也照樣進來；只有真的沒資料（模擬中斷）時才會顯示 feed down。
+let feedTimer = null;
+function feedTick() {
+  if (!liveActive || outage) return;
   const now = performance.now();
-  if (outage || now < nextStepAt) return false;
+  if (now < nextStepAt) return;
+  if (step >= prices.length - 1) { stopLive(); document.getElementById('liveStatus').textContent = 'Reached the end of the data (100%).'; return; }
+  step++;
   nextStepAt = now + liveInterval();
   lastDataAt = now;
-  return true;
+  updateScreen(step);
 }
 
 async function startLive() {
@@ -147,7 +152,8 @@ async function startLive() {
   applyBackgroundMode();
   startHeartbeat();
   await play();
-  liveStep(step);
+  updateScreen(step);
+  feedTimer = setInterval(feedTick, 50);
   liveTimer = setInterval(checkFeed, 1000);
 }
 
@@ -155,6 +161,7 @@ function stopLive() {
   if (!liveActive) return;
   liveActive = false;
   clearInterval(liveTimer);
+  clearInterval(feedTimer);
   clearInterval(heartbeatTimer);
   clearTimeout(swellTimer);
   stop();
@@ -198,7 +205,13 @@ function checkFeed() {
   const secondsAgo = (performance.now() - lastDataAt) / 1000;
   const limit = Math.max(8, liveInterval() / 1000 * 3);    // 超過 3 個更新週期沒資料就算中斷
   const status = document.getElementById('liveStatus');
-  const i = Math.max(0, step - 1);
+  const i = step;
+
+  // 聲音被瀏覽器暫停了（例如電腦睡眠後）：這跟資料無關，要分開講清楚
+  if (Tone.context.state !== 'running') {
+    status.innerHTML = '<b style="color:#faad14">🔇 Sound is paused by the browser — click anywhere on the page to resume.</b>';
+    return;
+  }
 
   if (secondsAgo > limit && !stale) {
     stale = true;

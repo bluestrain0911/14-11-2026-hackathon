@@ -650,6 +650,9 @@ function onTick(time) {
   // 波動很大時，不管什麼情緒都加上急促的鈸聲
   if ((wind > 0.45 && tick % 2 === 0) || wind > 0.75) hat.triggerAttackRelease('32n', time);
 
+  // 即時模式：資料由 live.js 自己的計時器送進來，畫面也由它更新；這裡只負責「照目前的資料演奏音樂」
+  if (typeof liveActive !== 'undefined' && liveActive) { tick = (tick + 1) % 16; return; }
+
   // 更新畫面（Tone.Draw 讓畫面和聲音同步）
   const i = step;
   Tone.Draw.schedule(() => updateScreen(i), time);
@@ -657,9 +660,7 @@ function onTick(time) {
   // 每隔幾個 16 分音符才前進一筆資料（越大，橘點走得越慢）
   const speedId = typeof surviving !== 'undefined' && surviving ? 'surviveSpeed' : 'speedSelect';
   const every = Number(document.getElementById(speedId).value);
-  if (typeof liveActive !== 'undefined' && liveActive) {
-    if (liveShouldAdvance()) step++;          // 即時模式：照真實時間前進（例如每 5 秒一筆）
-  } else if (tick % every === every - 1) step++;
+  if (tick % every === every - 1) step++;
   tick = (tick + 1) % 16;
 }
 
