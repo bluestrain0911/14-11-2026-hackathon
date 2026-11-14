@@ -144,14 +144,22 @@ async function narrate(event, facts, force) {
     return;
   }
 
-  let line = pickLine(event);
   try {
-    if (setting('geminiKey')) line = await askGemini(event, facts) || line;
-  } catch (e) { console.warn('Gemini failed, using built-in line', e); }
-
-  // End-of-match commentary and the post-match report queue up instead of interrupting each other
-  await speakLine(line, event, ['end', 'endLoss', 'newBest'].includes(event));
-  speaking = false;
+    let line = pickLine(event);
+    if (setting('geminiKey') && geminiCommentaryFails < 3) {
+      try {
+        const g = await askGemini(event, facts);
+        if (g) { line = g; geminiCommentaryFails = 0; } else geminiCommentaryFails++;
+      } catch (e) {
+        geminiCommentaryFails++;
+        console.warn('Gemini commentary failed or too slow, using built-in line', e.message);
+      }
+    }
+    // End-of-match commentary and the post-match report queue up instead of interrupting each other
+    await speakLine(line, event, ['end', 'endLoss', 'newBest'].includes(event));
+  } finally {
+    speaking = false;   // never leave the narrator stuck in "speaking" mode
+  }
 }
 
 // Read out a given line
@@ -182,11 +190,18 @@ async function pumpSpeech() {
     const p = speechQueue.shift();
     const my = speechToken;
     document.getElementById('narratorText').textContent = '🎙 ' + p.line;
+    // Safety net: never wait more than ~20 seconds for one line (some browsers never fire "ended"),
+    // otherwise one stuck line would silence the narrator for the rest of the session
+    const limit = ms => new Promise(r => setTimeout(r, ms));
+    const maxMs = 4000 + p.line.length * 90;
     try {
-      if (setting('elevenKey')) await speakEleven(p.line, p.event, my);
-      else await speakBrowser(p.line, p.event);
+      if (setting('elevenKey')) await Promise.race([speakEleven(p.line, p.event, my), limit(Math.max(maxMs, 12000))]);
+      else await Promise.race([speakBrowser(p.line, p.event), limit(maxMs)]);
     } catch (e) {
-      if (my === speechToken) { console.warn('ElevenLabs failed, using browser voice', e); await speakBrowser(p.line, p.event); }
+      if (my === speechToken) {
+        console.warn('ElevenLabs failed, using browser voice', e);
+        await Promise.race([speakBrowser(p.line, p.event), limit(maxMs)]);
+      }
     }
     p.resolve();
     await new Promise(r => setTimeout(r, BREATH_MS));   // Take a breath
@@ -208,9 +223,13 @@ async function askGemini(event, facts) {
     'use contractions, interjections like "oh no" or "wow", and an ellipsis or exclamation for emotion. ' +
     'Dramatic and silly, family friendly. ' +
     'Event: ' + event + '. Facts: ' + JSON.stringify(facts) + '. Reply with the sentence only.';
-  const text = await geminiGenerate(prompt);
+  // Commentary must be quick: if Gemini takes longer than 3 seconds, use a built-in line instead
+  const text = await geminiGenerate(prompt, 3000);
   return text ? text.trim().replace(/^"|"$/g, '') : null;
 }
+// After 3 slow/failed commentary calls in a row, stop asking Gemini for commentary until the page reloads
+// (the post-match report still uses Gemini)
+let geminiCommentaryFails = 0;
 
 // Call Gemini: send a prompt, get text back (used by both commentary and the post-match report)
 // Gemini model names change often (old ones get shut down), so if the chosen model is not found,
@@ -229,15 +248,22 @@ async function findGeminiModel() {
   return models[0] || null;
 }
 
-async function geminiGenerate(prompt) {
+async function geminiGenerate(prompt, timeoutMs = 25000) {
   const model = setting('geminiModel') || 'gemini-flash-latest';
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model +
               ':generateContent?key=' + encodeURIComponent(setting('geminiKey'));
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
-  });
+  // Give up after timeoutMs so a slow reply never blocks the narrator
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), timeoutMs);
+  let response;
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+      signal: abort.signal
+    });
+  } finally { clearTimeout(timer); }
   if ((response.status === 404 || response.status === 400) && !geminiModelFixTried) {
     geminiModelFixTried = true;
     const pick = await findGeminiModel();
@@ -245,7 +271,7 @@ async function geminiGenerate(prompt) {
       saveSetting('geminiModel', pick);
       document.getElementById('geminiModel').value = pick;
       console.warn('Gemini model "' + model + '" not available, switched to', pick);
-      return geminiGenerate(prompt);
+      return geminiGenerate(prompt, timeoutMs);
     }
   }
   if (!response.ok) {
@@ -375,6 +401,7 @@ function speakBrowser(line, event) {
     utterance.pitch = style.pitch;
     utterance.onend = resolve;
     utterance.onerror = resolve;
+    window._lastUtterance = utterance;   // keep a reference: Chrome can drop "onend" if the utterance is garbage-collected
     speechSynthesis.speak(utterance);  // Only one line is queued at a time (controlled by speakLine's queue), so they never overlap
   });
 }
