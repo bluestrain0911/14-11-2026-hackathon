@@ -69,7 +69,9 @@
   .tabs button.active { background: var(--signal); color: #fff; }
 
   /* 圖表卡片：頂部是報價列 */
-  .chart-box { position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 18px 18px 12px; }
+  .chart-wrap { position: relative; width: 100%; min-width: 0; }
+  .chart-wrap canvas { display: block; max-width: 100%; }
+  .chart-box { min-width: 0; position: relative; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 18px 18px 12px; }
   .quote { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap;
            padding-bottom: 14px; margin-bottom: 10px; border-bottom: 1px solid var(--line); }
   .quote-main { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
@@ -316,7 +318,7 @@
         <div class="meter"><div id="meterBar"></div></div>
       </div>
     </div>
-    <canvas id="chart" height="120"></canvas>
+    <div class="chart-wrap"><canvas id="chart" height="120"></canvas></div>
     <!-- 暴衝時閃一下的提示 -->
     <div id="spikeFlash" class="spike"></div>
     <div id="stormBanner" class="hidden" style="position:absolute; left:12px; bottom:12px; padding:6px 12px; border-radius:8px; font-weight:700; font-size:15px;"></div>
@@ -1339,7 +1341,15 @@ document.getElementById('replayRoundBtn').addEventListener('click', () => { stop
 
 // ---------- 10. 切換模式 ----------
 //   'replay'：回放、'game'：猜漲跌、'survive'：生存遊戲
+// 視窗大小改變（例如半螢幕 → 全螢幕）後，讓圖表重新量一次寬度，不會卡在舊的大小
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { try { chart.resize(); } catch (e) {} }, 150);
+});
+
 function showMode(mode) {
+  if (typeof stopSpeech === 'function') stopSpeech();
   stop();
   surviving = false;
   onFinished = null;

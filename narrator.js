@@ -155,33 +155,43 @@ async function narrate(event, facts, force) {
 }
 
 // 直接唸出一句指定的話
-// 同一時間只會有一個人聲：
-//   一般（interrupt）：新的一句會打斷正在講的那句，並取消還沒講的
-//   排隊（queue = true）：等前面講完再講，例如賽後報告接在終場評論後面
-let speechToken = 0;        // 每次「打斷」就加 1，舊的那句看到號碼變了就不講
-let currentAudio = null;    // 正在播放的 ElevenLabs 聲音
-let speechChain = Promise.resolve();
+// 同一時間只會有一個人聲，而且每句之間停頓一下（像人講話會換氣）：
+//   新的一句要等前一句講完；等待中只保留「最新的一句」（舊的就不講了，免得越積越多、越講越落後）
+//   keep = true 的句子（終場評論、賽後報告）一定會依序講完
+const BREATH_MS = 450;
+let speechToken = 0;
+let currentAudio = null;
+let speechQueue = [];
+let speechBusy = false;
 function stopSpeech() {
   speechToken++;
+  speechQueue.forEach(p => p.resolve()); speechQueue = [];
   if (currentAudio) { currentAudio.pause(); if (currentAudio.onended) currentAudio.onended(); currentAudio = null; }
   if ('speechSynthesis' in window) speechSynthesis.cancel();
 }
-function speakLine(line, event, queue) {
-  if (!queue) stopSpeech();
-  const run = async () => {
+function speakLine(line, event, keep) {
+  return new Promise(resolve => {
+    if (!keep) speechQueue = speechQueue.filter(p => { if (p.keep) return true; p.resolve(); return false; });
+    speechQueue.push({ line, event, keep, resolve });
+    if (!speechBusy) pumpSpeech();
+  });
+}
+async function pumpSpeech() {
+  speechBusy = true;
+  while (speechQueue.length) {
+    const p = speechQueue.shift();
     const my = speechToken;
-    document.getElementById('narratorText').textContent = '🎙 ' + line;
+    document.getElementById('narratorText').textContent = '🎙 ' + p.line;
     try {
-      if (setting('elevenKey')) await speakEleven(line, event, my);
-      else await speakBrowser(line, event);
+      if (setting('elevenKey')) await speakEleven(p.line, p.event, my);
+      else await speakBrowser(p.line, p.event);
     } catch (e) {
-      if (my !== speechToken) return;      // 已經被打斷了，不用補講
-      console.warn('ElevenLabs failed, using browser voice', e);
-      await speakBrowser(line, event);
+      if (my === speechToken) { console.warn('ElevenLabs failed, using browser voice', e); await speakBrowser(p.line, p.event); }
     }
-  };
-  speechChain = queue ? speechChain.then(run, run) : run();
-  return speechChain;
+    p.resolve();
+    await new Promise(r => setTimeout(r, BREATH_MS));   // 換氣
+  }
+  speechBusy = false;
 }
 
 function pickLine(event) {
@@ -333,8 +343,7 @@ function speakBrowser(line, event) {
     utterance.pitch = style.pitch;
     utterance.onend = resolve;
     utterance.onerror = resolve;
-    speechSynthesis.cancel();          // 舊的還沒講完就直接換新的，不要排隊
-    speechSynthesis.speak(utterance);
+    speechSynthesis.speak(utterance);  // 一次只排一句（由 speakLine 的佇列控制），不會重疊
   });
 }
 

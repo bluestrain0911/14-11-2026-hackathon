@@ -43,7 +43,7 @@ const quietAfter = () => Number(document.getElementById('quietAfter').value);   
 function goQuiet() {
   liveQuiet = true;
   musicBus.gain.rampTo(0, 3);                      // 音樂慢慢淡出
-  if ('speechSynthesis' in window) speechSynthesis.cancel();
+  if (typeof stopSpeech === 'function') stopSpeech();
   // 說清楚為什麼沒聲音了，不然會以為壞掉
   if (document.getElementById('narratorOn').checked) speakLine('Market is quiet. Pausing the music until something happens.', 'pro');
   else playCue('calm');
