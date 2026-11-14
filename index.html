@@ -173,7 +173,9 @@
     <button id="restartBtn">↺ Restart</button>
     <select id="datasetSelect"></select>
     <select id="viewSelect">
-      <option value="storm">Zoom: biggest storm</option>
+      <option value="storm1">Zoom: storm #1 (biggest)</option>
+      <option value="storm2">Zoom: storm #2</option>
+      <option value="storm3">Zoom: storm #3</option>
       <option value="day">Whole day</option>
     </select>
     <select id="speedSelect">
@@ -264,11 +266,16 @@ function selectView() {
   const n = full.c.length;
   prices = []; ranges = []; times = [];
 
-  if (view === 'storm') {
-    let peak = 0;
-    for (let i = 0; i < n; i++) {
-      if (full.h[i] - full.l[i] > full.h[peak] - full.l[peak]) peak = i;
+  if (view.startsWith('storm')) {
+    // 找出當天前三大的風暴（彼此至少相隔 150 分鐘，避免三段其實是同一場風暴）
+    const order = full.c.map((_, i) => i).sort((a, b) => (full.h[b] - full.l[b]) - (full.h[a] - full.l[a]));
+    const peaks = [];
+    for (const i of order) {
+      if (peaks.every(p => Math.abs(p - i) >= 150)) peaks.push(i);
+      if (peaks.length === 3) break;
     }
+    const rank = Number(view.slice(5)) || 1;
+    const peak = peaks[Math.min(rank, peaks.length) - 1] ?? 0;
     const start = Math.max(0, peak - 90), end = Math.min(n, peak + 60);
     for (let i = start; i < end; i++) {
       prices.push(full.c[i]); ranges.push(full.h[i] - full.l[i]); times.push(full.t[i]);
