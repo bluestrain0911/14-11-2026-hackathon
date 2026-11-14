@@ -6,9 +6,23 @@
 <title>Market Symphony</title>
 
 <!-- 外部函式庫（需要網路）：Chart.js 畫圖、Tone.js 做音樂 -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.js" crossorigin="anonymous"></script>
 <!-- SGX FX 的真實資料（和 index.html 放在同一個資料夾） -->
+<script>
+// 計時器裡的錯誤（尤其是本機檔案 file:// 的程式）在瀏覽器裡只會顯示 "Script error."。
+// 這裡把每個計時器包起來：出錯時記下完整的錯誤訊息，而且不會讓計時器之後的工作停掉。
+(function () {
+  const wrap = (fn, where) => typeof fn !== 'function' ? fn : function () {
+    try { return fn.apply(this, arguments); }
+    catch (e) { console.error('[' + where + '] ' + (e && e.message), e); }
+  };
+  const st = window.setTimeout, si = window.setInterval, raf = window.requestAnimationFrame;
+  window.setTimeout = (fn, ms, ...a) => st(wrap(fn, 'timeout'), ms, ...a);
+  window.setInterval = (fn, ms, ...a) => si(wrap(fn, 'interval'), ms, ...a);
+  window.requestAnimationFrame = fn => raf(wrap(fn, 'frame'));
+})();
+</script>
 <script src="data.js"></script>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
