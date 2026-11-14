@@ -43,6 +43,53 @@ screamTone.volume.value = -12;
 const sadTrombone = new Tone.Synth({ oscillator: { type: 'triangle' },
   envelope: { attack: 0.05, decay: 0.3, sustain: 0.6, release: 0.5 } }).toDestination();
 
+// =====================================================================
+// 球賽氣氛：觀眾、哨聲、汽笛、進球
+// =====================================================================
+// 觀眾：粉紅雜訊 + 帶通濾波器 = 遠遠的一大群人在吵。音量跟著市場激烈程度變大
+const crowdNoise = new Tone.Noise('pink');
+const crowdFilter = new Tone.Filter(900, 'bandpass');
+const crowdGain = new Tone.Gain(0).toDestination();
+crowdNoise.connect(crowdFilter);
+crowdFilter.connect(crowdGain);
+let crowdBase = 0.05;
+
+function crowdRoar() {                       // 歡呼：音量突然衝高再慢慢退
+  crowdFilter.frequency.rampTo(1300, 0.1);
+  crowdGain.gain.rampTo(0.7, 0.15);
+  setTimeout(() => { crowdGain.gain.rampTo(crowdBase, 1.8); crowdFilter.frequency.rampTo(900, 1.8); }, 700);
+}
+function crowdGroan() {                      // 「噢～～」：聲音往下掉
+  crowdFilter.frequency.rampTo(1100, 0.05);
+  crowdGain.gain.rampTo(0.45, 0.1);
+  setTimeout(() => { crowdFilter.frequency.rampTo(300, 0.9); crowdGain.gain.rampTo(crowdBase, 1.4); }, 150);
+}
+
+// 裁判哨
+const whistleSynth = new Tone.Synth({ oscillator: { type: 'sine' },
+  envelope: { attack: 0.01, decay: 0.05, sustain: 0.9, release: 0.05 } }).toDestination();
+whistleSynth.volume.value = -10;
+function whistle(times, long) {
+  for (let k = 0; k < times; k++) {
+    const start = Tone.now() + k * 0.45;
+    whistleSynth.triggerAttackRelease(2900, long && k === times - 1 ? 0.9 : 0.25, start);
+  }
+}
+
+// 汽笛喇叭（進球時）
+const airhorn = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'sawtooth' },
+  envelope: { attack: 0.02, decay: 0.1, sustain: 0.9, release: 0.1 } }).toDestination();
+airhorn.volume.value = -14;
+function hornBlast() {
+  airhorn.triggerAttackRelease(['Bb4', 'D5', 'F5'], 0.25, Tone.now());
+  airhorn.triggerAttackRelease(['Bb4', 'D5', 'F5'], 0.7, Tone.now() + 0.35);
+}
+
+let moneyHistory = [];       // 每一步的錢，用來判斷「進球」
+let lastGoalStep = -99;
+let lastGroanStep = -99;
+let streak = 0;              // 連續賺錢幾步
+
 // ---------- 開始一局 ----------
 function startSurvival() {
   // 隨機挑一天，從「最劇烈的時刻」之前 40～100 分鐘開始，確保一定會遇到風暴
@@ -59,6 +106,7 @@ function startSurvival() {
   computeSpikes();     // 暴衝用「這一局」的標準重新算，不然風暴時段會一直響
 
   money = START_MONEY; peakMoney = START_MONEY; position = 0; lastIndex = -1;
+  moneyHistory = []; lastGoalStep = -99; lastGroanStep = -99; streak = 0;
   lastMood = 'calm'; gameOver = false; particles = []; popups = [];
   surviving = true;
   drawChart();
@@ -72,10 +120,16 @@ function startSurvival() {
   paused = false;
   // 先倒數 3 秒，讓玩家準備好，再開始播
   countdownEnd = performance.now() + 3000;
+  Tone.start().then(() => {
+    if (crowdNoise.state !== 'started') crowdNoise.start();
+    crowdBase = 0.06;
+    crowdGain.gain.rampTo(crowdBase, 1);
+  });
   setTimeout(() => {
     if (!surviving) return;
+    whistle(1, true);                         // 開球哨
     play();
-    narrate('calm', { time: times[0] }, true);
+    narrate('kickoff', { time: times[0] }, true);
   }, 3000);
 }
 
@@ -104,8 +158,41 @@ function surviveStep(i) {
                     color: change > 0 ? '#f5c542' : '#ff4d4f', y: 0, life: 1 });
     }
   }
+  if (lastIndex >= 0 && i > lastIndex) {
+    const change = money - (moneyHistory[moneyHistory.length - 1] ?? START_MONEY);
+    streak = change > 0 ? streak + 1 : change < 0 ? 0 : streak;
+    if (streak === 5 || streak === 10 || streak === 15) {
+      popups.push({ text: '🔥 ON FIRE x' + streak, color: '#ff9f1c', y: -60, life: 1.5 });
+      crowdRoar();
+      narrate('streak', { streak: streak, balance: Math.round(money) }, false);
+    }
+  }
+  moneyHistory.push(money);
   lastIndex = i;
   peakMoney = Math.max(peakMoney, money);
+
+  // 觀眾的音量跟著市場有多激烈
+  crowdBase = 0.06 + storm[i] * 0.2;
+
+  // 「進球」：最近 5 步賺了 $800 以上 → 歡呼、汽笛、彩帶
+  const gained = money - (moneyHistory[Math.max(0, moneyHistory.length - 6)] ?? START_MONEY);
+  if (gained >= 800 && i - lastGoalStep > 8) {
+    lastGoalStep = i;
+    popups.push({ text: 'GOOOAL! +$' + Math.round(gained).toLocaleString(), color: '#3ecf8e', y: -40, life: 2, big: true });
+    for (let k = 0; k < 80; k++) {
+      particles.push({ x: Math.random() * stage.width, y: -Math.random() * 60, vy: 80 + Math.random() * 120,
+                       kind: 'confetti', color: ['#f5c542', '#3ecf8e', '#4f8cff', '#ff6b6b', '#ffffff'][k % 5] });
+    }
+    crowdRoar(); hornBlast();
+    narrate('goal', { gained: Math.round(gained), balance: Math.round(money), time: times[i] }, true);
+  }
+  // 「失球」：最近 5 步賠了 $800 以上 → 觀眾「噢～」
+  if (gained <= -800 && i - lastGroanStep > 8) {
+    lastGroanStep = i;
+    popups.push({ text: 'OOOH! -$' + Math.round(-gained).toLocaleString(), color: '#ff4d4f', y: -40, life: 1.6, big: true });
+    crowdGroan();
+    narrate('losing', { lost: Math.round(-gained), balance: Math.round(money), time: times[i] }, true);
+  }
 
   // 暴衝：畫面上跳出大字
   if (spikes[i]) {
@@ -137,6 +224,9 @@ function surviveStep(i) {
     stop();
     ['G3', 'F#3', 'F3', 'E3'].forEach((note, k) =>
       sadTrombone.triggerAttackRelease(note, k === 3 ? 1.2 : 0.4, Tone.now() + k * 0.45));
+    whistle(3, true);
+    crowdGroan();
+    setTimeout(() => crowdGain.gain.rampTo(0, 2), 2500);
     narrate('marginCall', facts, true);
     finishText('MARGIN CALL! You went broke at ' + times[i] + '.');
   }
@@ -147,8 +237,11 @@ function endSurvival() {
   if (gameOver || !surviving) return;
   gameOver = true;
   const result = money - START_MONEY;
-  narrate('end', { finalBalance: Math.round(money), profit: Math.round(result) }, true);
-  finishText('Closing bell! You finished with $' + Math.round(money).toLocaleString() +
+  whistle(3, true);                            // 終場哨：嗶、嗶、嗶～～
+  if (result > 0) { crowdRoar(); hornBlast(); } else crowdGroan();
+  setTimeout(() => crowdGain.gain.rampTo(0, 2), 3000);
+  narrate(result > 0 ? 'end' : 'endLoss', { finalBalance: Math.round(money), profit: Math.round(result) }, true);
+  finishText('FULL TIME! You finished with $' + Math.round(money).toLocaleString() +
              ' (' + (result >= 0 ? '+' : '') + Math.round(result / START_MONEY * 100) + '%).');
 }
 
@@ -165,6 +258,9 @@ function setPosition(newPosition) {
   if (position !== 0 || newPosition !== 0) money -= SWITCH_COST;   // 換方向要付一點手續費
   position = newPosition;
   updateStats();
+  // 播報員評論你的動作（球評在講球員）
+  const event = newPosition === 1 ? 'playerLong' : newPosition === -1 ? 'playerShort' : 'playerCash';
+  narrate(event, { mood: moods[Math.max(0, lastIndex)], balance: Math.round(money) }, false);
 }
 
 document.getElementById('buyBtn').addEventListener('click', () => setPosition(1));
@@ -230,6 +326,8 @@ function drawStage(t) {
       ctx.fillStyle = '#f5c542';
       ctx.beginPath(); ctx.arc(p.x, p.y, 6, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#b8901c'; ctx.fillRect(p.x - 1, p.y - 3, 2, 6);
+    } else if (p.kind === 'confetti') {
+      ctx.fillStyle = p.color; ctx.fillRect(p.x + Math.sin(p.y / 15) * 6, p.y, 6, 4);
     } else {
       ctx.fillStyle = '#a3262a'; ctx.fillRect(p.x, p.y, 2, 10);
     }
@@ -256,8 +354,15 @@ function drawStage(t) {
   popups.forEach(p => {
     p.y += 40 * dt; p.life -= dt * 0.8;
     ctx.globalAlpha = Math.max(0, p.life);
-    ctx.fillStyle = p.color; ctx.font = 'bold 22px system-ui';
-    ctx.fillText(p.text, W / 2 + 60, H / 2 - p.y);
+    ctx.fillStyle = p.color;
+    if (p.big) {                                   // 進球、失球：大字置中
+      ctx.font = 'bold 44px system-ui'; ctx.textAlign = 'center';
+      ctx.fillText(p.text, W / 2, H / 2 - 20 - p.y * 0.3);
+      ctx.textAlign = 'left';
+    } else {
+      ctx.font = 'bold 22px system-ui';
+      ctx.fillText(p.text, W / 2 + 60, H / 2 - p.y);
+    }
     ctx.globalAlpha = 1;
   });
 
@@ -266,11 +371,14 @@ function drawStage(t) {
     const hint = mood === 'heaven' ? '♪ Heaven music → price is rising → try ⬆ Buy'
                : mood === 'horror' ? '♪ Horror music → price is falling → try ⬇ Sell'
                : '♪ Calm music → price is flat → stay in 💵 Cash';
-    ctx.font = 'bold 18px system-ui';
-    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(10, 10, ctx.measureText(hint).width + 20, 32);
+    ctx.font = 'bold 16px system-ui';
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(10, H - 72, ctx.measureText(hint).width + 20, 28);
     ctx.fillStyle = mood === 'heaven' ? '#f5c542' : mood === 'horror' ? '#ff6b6b' : '#cfd6e4';
-    ctx.fillText(hint, 20, 33);
+    ctx.fillText(hint, 20, H - 52);
   }
+
+  // 計分板：像電視轉播右上角那樣
+  if (surviving && lastIndex >= 0) drawScoreboard(W, t);
 
   // 開局倒數
   const left = countdownEnd - performance.now();
@@ -302,6 +410,21 @@ function drawStage(t) {
 
   // 鬼！（不跟著抖，直接蓋滿畫面）
   if (performance.now() < ghostUntil) drawGhost(W, H);
+}
+
+// 電視轉播風格的計分板
+function drawScoreboard(W, t) {
+  const x = W - 300, y = 10;
+  ctx.fillStyle = 'rgba(10,12,18,0.85)'; ctx.fillRect(x, y, 290, 44);
+  ctx.fillStyle = '#d93a3a'; ctx.fillRect(x, y, 56, 44);
+  ctx.fillStyle = '#ffffff'; ctx.font = 'bold 14px system-ui';
+  ctx.fillText(Math.floor(t / 500) % 2 ? '● LIVE' : '  LIVE', x + 4, y + 27);
+  ctx.font = 'bold 13px system-ui'; ctx.fillStyle = '#9aa0a6';
+  ctx.fillText(times[lastIndex] + '  ·  MIN ' + (lastIndex + 1) + '/' + prices.length, x + 64, y + 17);
+  const profit = money - START_MONEY;
+  ctx.font = 'bold 18px system-ui'; ctx.fillStyle = profit >= 0 ? '#3ecf8e' : '#ff4d4f';
+  ctx.fillText('YOU  ' + (profit >= 0 ? '+' : '-') + '$' + Math.abs(Math.round(profit)).toLocaleString(), x + 64, y + 37);
+  if (streak >= 3) { ctx.fillStyle = '#ff9f1c'; ctx.fillText('🔥' + streak, x + 236, y + 37); }
 }
 
 // 畫一個像素風的交易員

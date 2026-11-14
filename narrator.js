@@ -45,7 +45,42 @@ const LINES = {
     "Brilliant trading! Are you secretly a hedge fund?"
   ],
   end: [
-    "And there's the closing bell! What a session, folks!"
+    "And there's the final whistle! What a performance, folks!",
+    "Full time! They've walked away with the profits!"
+  ],
+  endLoss: [
+    "Full time... and it's a painful one, I'm afraid.",
+    "The final whistle blows. The market wins this one."
+  ],
+  kickoff: [
+    "And we're live! Kick-off in the euro dollar market!",
+    "Welcome, everybody! The markets are open... let's play!"
+  ],
+  goal: [
+    "GOOOAL! What a trade! The crowd goes wild!",
+    "Oh, it's in the back of the net! Beautiful trading!",
+    "Unbelievable! Right into the top corner!"
+  ],
+  losing: [
+    "Ooh! That's gone horribly wrong!",
+    "Oh dear... that one's going to hurt in the morning.",
+    "A howler! The crowd can't believe it!"
+  ],
+  streak: [
+    "They're on fire! Can anybody stop them?!",
+    "Another one! This is a masterclass!"
+  ],
+  playerLong: [
+    "They're going long! Bold move!",
+    "Buying in! They smell a rally!"
+  ],
+  playerShort: [
+    "They're going short! Betting on the fall!",
+    "Selling! Brave, very brave!"
+  ],
+  playerCash: [
+    "Back to cash. Playing it safe.",
+    "They've pulled out! Sitting on the bench for now."
   ]
 };
 
@@ -67,7 +102,8 @@ let speaking = false;
 async function narrate(event, facts, force) {
   if (!document.getElementById('narratorOn').checked) return;
   const now = Date.now();
-  if (!force && (speaking || now - lastSpoken < 6000)) return;   // 至少間隔 6 秒
+  if (!force && (speaking || now - lastSpoken < 3500)) return;   // 至少間隔 3.5 秒，像球評一樣講不停
+  if (force && 'speechSynthesis' in window) speechSynthesis.cancel(); // 重要時刻直接插話
   lastSpoken = now;
   speaking = true;
 
@@ -96,7 +132,8 @@ function pickLine(event) {
 async function askGemini(event, facts) {
   const model = setting('geminiModel') || 'gemini-2.5-flash';
   const prompt =
-    'You are an over-the-top, funny British sports commentator narrating a live EUR/USD currency market ' +
+    'You are an excited British football commentator doing live play-by-play of a EUR/USD currency market ' +
+    'as if it were a match; the player is the trader. ' +
     'for a hackathon game. Write ONE short line (max 15 words) that sounds natural when spoken aloud: ' +
     'use contractions, interjections like "oh no" or "wow", and an ellipsis or exclamation for emotion. ' +
     'Dramatic and silly, family friendly. ' +
@@ -134,6 +171,14 @@ async function speakEleven(line, event) {
 // ---------- 備案：瀏覽器內建語音（免費） ----------
 // 每種情緒用不同的語速和音高：恐怖 = 慢、低沉；暴衝 = 快、激動；天堂 = 輕快、高一點
 const MOOD_VOICE = {
+  goal:        { rate: 1.3,  pitch: 1.3 },
+  losing:      { rate: 1.1,  pitch: 0.8 },
+  streak:      { rate: 1.25, pitch: 1.2 },
+  kickoff:     { rate: 1.1,  pitch: 1.1 },
+  endLoss:     { rate: 0.9,  pitch: 0.75 },
+  playerLong:  { rate: 1.15, pitch: 1.1 },
+  playerShort: { rate: 1.15, pitch: 1.0 },
+  playerCash:  { rate: 1.0,  pitch: 1.0 },
   horror:     { rate: 0.9,  pitch: 0.7 },
   heaven:     { rate: 1.1,  pitch: 1.15 },
   calm:       { rate: 0.95, pitch: 1.0 },
