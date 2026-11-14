@@ -132,17 +132,18 @@
   <!-- 即時監控模式（用歷史資料模擬） -->
   <div id="livePanel" class="game hidden">
     <div style="font-size:14px; color:#9aa0a6; margin-bottom:8px;">
-      Simulated live feed: real SGX FX data arrives one minute at a time, like a live market. Leave it running in the
+      Simulated live feed: the first 90% of the data is shown as history, then the last 10% arrives one minute at a time,
+      like a live market. Leave it running in the
       background — the music, storm warnings and the browser tab title tell you when something happens.
       <b style="color:#e8e8e8">The FX market is closed at weekends, so this demo replays a real trading day.</b>
     </div>
     <div class="controls" style="margin:8px 0;">
-      <select id="liveDay"></select>
-      <label>Start at <input id="liveStart" type="time" value="12:00"></label>
+      <label>Data <select id="liveDay"></select></label>
       <select id="liveSpeed">
         <option value="60000">1 market minute = 1 minute (real time)</option>
         <option value="5000" selected>1 market minute = 5 seconds (demo)</option>
         <option value="1500">1 market minute = 1.5 seconds (fast)</option>
+        <option value="200">1 market minute = 0.2 seconds (turbo)</option>
       </select>
       <button id="liveStartBtn">▶ Start monitoring</button>
       <button id="liveStopBtn" style="background:#262a33">■ Stop</button>

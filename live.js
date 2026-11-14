@@ -19,12 +19,34 @@ let liveTimer = null;
 let liveLastWarn = 0, liveLastMood = 'calm';
 const originalTitle = document.title;
 
-// 下拉選單：真實的交易日
-Object.keys(datasets).filter(name => !name.startsWith('Demo')).forEach(name => {
+// 下拉選單：全部 53 天，或某一天
+const realDays = Object.keys(datasets).filter(name => !name.startsWith('Demo'));
+['ALL', ...realDays].forEach(name => {
   const option = document.createElement('option');
-  option.value = name; option.textContent = name;
+  option.value = name;
+  option.textContent = name === 'ALL' ? 'All ' + realDays.length + ' days (Jul–Aug 2026)' : name;
   document.getElementById('liveDay').appendChild(option);
 });
+
+// 圖表要顯示哪些點（全部 7 萬多分鐘畫不下，所以歷史部分會抽樣）
+let shownIndex = [];         // 圖上每個點對應到資料的第幾筆
+let liveFrom = 0;            // 從第幾筆開始「即時」播放（= 90% 的位置）
+let liveEvery = 1;           // 即時部分每幾筆畫一個點
+
+// 把選到的資料接成一條連續的時間序列
+function buildSeries(choice) {
+  const days = choice === 'ALL' ? realDays : [choice];
+  prices = []; ranges = []; times = [];
+  days.forEach(name => {
+    const d = datasets[name];
+    const date = name.replace(/^EUR\/USD \w+ (\d+ \w+).*$/, '$1');          // 例如 "14 Jul"
+    d.c.forEach((c, k) => {
+      prices.push(c);
+      ranges.push(d.h[k] - d.l[k]);
+      times.push(days.length > 1 ? date + ' ' + d.t[k] : d.t[k]);
+    });
+  });
+}
 
 const liveInterval = () => Number(document.getElementById('liveSpeed').value);
 
@@ -39,20 +61,28 @@ function liveShouldAdvance() {
 
 async function startLive() {
   stopLive();
-  const data = datasets[document.getElementById('liveDay').value];
-  prices = data.c.slice(); ranges = data.h.map((h, k) => h - data.l[k]); times = data.t.slice();
+  buildSeries(document.getElementById('liveDay').value);
   causalMode = true;              // 只用過去的資料判斷
   analyse();
   causalMode = false;
 
-  // 從使用者選的時間開始
-  const startAt = document.getElementById('liveStart').value || '12:00';
-  const index = times.findIndex(t => t >= startAt);
-  step = Math.max(0, index);
+  // 前 90% 當作「已經發生的歷史」直接畫出來，從 90% 的位置開始即時播放到 100%
+  liveFrom = Math.floor(prices.length * 0.9);
+  step = liveFrom;
+  const historyEvery = Math.max(1, Math.ceil(liveFrom / 500));
+  liveEvery = Math.max(1, Math.ceil((prices.length - liveFrom) / 500));
+  shownIndex = [];
+  for (let k = 0; k < liveFrom; k += historyEvery) shownIndex.push(k);
   liveLastWarn = warnLevel[step] || 0;
   liveLastMood = moods[step];
 
-  drawChart();
+  chart.data.datasets[0].segment = {
+    borderColor: ctx => shownIndex[ctx.p0DataIndex] < liveFrom ? '#5d6475' : (MOOD_COLORS[moods[shownIndex[ctx.p0DataIndex]]] || '#8a93a6'),
+    borderDash: ctx => shownIndex[ctx.p0DataIndex] < liveFrom ? [4, 4] : undefined
+  };
+  document.getElementById('liveStatus').textContent =
+    'History (grey, first 90%): ' + times[0] + ' → ' + times[liveFrom] + '. Live from ' + times[liveFrom] +
+    ' to ' + times[times.length - 1] + ' (last 10%).';
   liveActive = true;
   outage = false; stale = false;
   nextStepAt = performance.now() + liveInterval();
@@ -77,12 +107,14 @@ function stopLive() {
 
 // 每一筆新資料送到時（由 updateScreen 呼叫）
 function liveStep(i) {
-  // 圖表只畫「過去 90 分鐘」，像看盤軟體一樣往左捲
-  const from = Math.max(0, i - 89);
-  chart.data.labels = times.slice(from, i + 1);
-  chart.data.datasets[0].data = prices.slice(from, i + 1);
-  chart.data.datasets[0].segment = { borderColor: ctx => MOOD_COLORS[moods[from + ctx.p0DataIndex]] || '#8a93a6' };
-  const marker = prices.slice(from, i + 1).map(() => null);
+  // 圖表：前 90% 的歷史（灰色虛線）+ 即時進來的新資料（依照情緒上色）
+  if (i >= liveFrom && ((i - liveFrom) % liveEvery === 0 || shownIndex[shownIndex.length - 1] < i - liveEvery)) {
+    if (shownIndex[shownIndex.length - 1] !== i) shownIndex.push(i);
+  }
+  const shown = shownIndex[shownIndex.length - 1] === i ? shownIndex : shownIndex.concat([i]);
+  chart.data.labels = shown.map(k => times[k]);
+  chart.data.datasets[0].data = shown.map(k => prices[k]);
+  const marker = shown.map(() => null);
   marker[marker.length - 1] = prices[i];
   chart.data.datasets[1].data = marker;
   chart.update();
