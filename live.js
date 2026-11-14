@@ -19,6 +19,60 @@ let liveTimer = null;
 let liveLastWarn = 0, liveLastMood = 'calm';
 const originalTitle = document.title;
 
+// =====================================================================
+// 背景模式：長時間開著也不會煩
+//   continuous：一直播音樂（demo、學習用）
+//   ambient   ：平常音量很小；有事發生時音樂漸強 30 秒，再慢慢變小
+//   alerts    ：平常完全安靜；有事發生時只播 1～2 秒的短提示音
+// 警報聲、暴衝音效、語音播報不受影響，永遠都會響
+// =====================================================================
+const AMBIENT_LEVEL = 0.08;
+let swellTimer = null;
+let heartbeatTimer = null;
+const bgMode = () => document.getElementById('bgMode').value;
+
+// 短提示音：上漲 = 往上的三個音；下跌 = 往下的低音；回到平靜 = 一聲輕輕的叮
+const cue = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'triangle' },
+  envelope: { attack: 0.005, decay: 0.4, sustain: 0, release: 0.4 } }).toDestination();
+cue.volume.value = -8;
+function playCue(mood) {
+  const now = Tone.now();
+  const notes = mood === 'heaven' ? ['C5', 'E5', 'G5'] : mood === 'horror' ? ['G3', 'Eb3', 'C3'] : ['A5'];
+  notes.forEach((n, k) => cue.triggerAttackRelease(n, '8n', now + k * 0.15));
+}
+
+function applyBackgroundMode() {
+  clearTimeout(swellTimer);
+  const level = bgMode() === 'continuous' ? 1 : bgMode() === 'ambient' ? AMBIENT_LEVEL : 0;
+  musicBus.gain.rampTo(level, 1);
+}
+
+// 有事發生：ambient → 音樂漸強 30 秒；alerts → 播短提示音
+function somethingHappened(kind) {
+  if (bgMode() === 'ambient') {
+    musicBus.gain.rampTo(1, 1.5);
+    clearTimeout(swellTimer);
+    swellTimer = setTimeout(() => { if (bgMode() === 'ambient') musicBus.gain.rampTo(AMBIENT_LEVEL, 5); }, 30000);
+  } else if (bgMode() === 'alerts' && kind) {
+    playCue(kind);
+  }
+}
+
+// 定時的「心跳聲」：告訴使用者系統還活著（資料中斷時不響）
+function startHeartbeat() {
+  clearInterval(heartbeatTimer);
+  const every = Number(document.getElementById('heartbeat').value);
+  if (!every) return;
+  heartbeatTimer = setInterval(() => {
+    if (!liveActive || stale) return;
+    const now = Tone.now();
+    cue.triggerAttackRelease('E6', '32n', now, 0.3);
+    cue.triggerAttackRelease('E6', '32n', now + 0.12, 0.3);
+  }, every);
+}
+document.getElementById('bgMode').addEventListener('change', () => { if (liveActive) applyBackgroundMode(); });
+document.getElementById('heartbeat').addEventListener('change', () => { if (liveActive) startHeartbeat(); });
+
 // 下拉選單：全部 53 天，或某一天
 const realDays = Object.keys(datasets).filter(name => !name.startsWith('Demo'));
 ['ALL', ...realDays].forEach(name => {
@@ -90,6 +144,8 @@ async function startLive() {
   document.getElementById('outageBtn').textContent = '🔌 Simulate feed outage';
   Tone.Destination.volume.rampTo(Number(document.getElementById('volume').value) || 0, 0.5);
   onFinished = stopLive;
+  applyBackgroundMode();
+  startHeartbeat();
   await play();
   liveStep(step);
   liveTimer = setInterval(checkFeed, 1000);
@@ -99,7 +155,10 @@ function stopLive() {
   if (!liveActive) return;
   liveActive = false;
   clearInterval(liveTimer);
+  clearInterval(heartbeatTimer);
+  clearTimeout(swellTimer);
   stop();
+  musicBus.gain.rampTo(1, 0.5);           // 離開即時模式，其他模式的音樂恢復正常
   document.title = originalTitle;
   Tone.Destination.volume.rampTo(Number(document.getElementById('volume').value) || 0, 0.5);
   document.getElementById('liveStatus').textContent = 'Stopped.';
@@ -126,8 +185,9 @@ function liveStep(i) {
 
   // 播報：情緒改變、風暴預警
   const facts = { time: times[i], price: prices[i].toFixed(5), volatilityTimesNormal: (stormRatio[i] || 1).toFixed(1) };
-  if (warn > liveLastWarn) narrate('stormWarning', facts, warn === 2);
-  else if (moods[i] !== liveLastMood) narrate(moods[i], facts, false);
+  if (warn > liveLastWarn) { narrate('stormWarning', facts, warn === 2); somethingHappened(null); }   // 警報聲本來就會響
+  else if (moods[i] !== liveLastMood) { narrate(moods[i], facts, false); somethingHappened(moods[i]); }
+  if (spikes[i]) somethingHappened(null);                                                          // 暴衝音效本來就會響
   liveLastWarn = warn;
   liveLastMood = moods[i];
 }

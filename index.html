@@ -145,6 +145,16 @@
         <option value="1500">1 market minute = 1.5 seconds (fast)</option>
         <option value="200">1 market minute = 0.2 seconds (turbo)</option>
       </select>
+      <select id="bgMode">
+        <option value="continuous">🎵 Continuous music</option>
+        <option value="ambient">🌙 Ambient (quiet until something happens)</option>
+        <option value="alerts">🔕 Alerts only (silent, short cues)</option>
+      </select>
+      <select id="heartbeat">
+        <option value="0">Heartbeat ping: off</option>
+        <option value="60000">Heartbeat ping: every minute</option>
+        <option value="900000">Heartbeat ping: every 15 minutes</option>
+      </select>
       <button id="liveStartBtn">▶ Start monitoring</button>
       <button id="liveStopBtn" style="background:#262a33">■ Stop</button>
       <button id="outageBtn" style="background:#4a5263">🔌 Simulate feed outage</button>
@@ -446,7 +456,9 @@ function drawChart() {
 
 // ---------- 4. 樂器 ----------
 // 殘響：讓聲音像在大教堂或空曠的地方，天堂和恐怖都需要它
-const reverb = new Tone.Reverb({ decay: 5, wet: 0.45 }).toDestination();
+// 音樂總線：所有「背景音樂」都經過這裡，方便整體調大調小（警報和音效不經過這裡，所以不會被關掉）
+const musicBus = new Tone.Gain(1).toDestination();
+const reverb = new Tone.Reverb({ decay: 5, wet: 0.45 }).connect(musicBus);
 
 // 天堂：柔和的長音和弦（像合唱）+ 高音的鈴聲
 const pad = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'sine' },
@@ -472,11 +484,11 @@ const vibrato = new Tone.Vibrato(6, 0.5).connect(reverb);
 const eerie = new Tone.Synth({ oscillator: { type: 'sine' },
   envelope: { attack: 0.4, decay: 0.5, sustain: 0.6, release: 1.5 } }).connect(vibrato);
 eerie.volume.value = -18;
-const heart = new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 4 }).toDestination();
+const heart = new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 4 }).connect(musicBus);
 heart.volume.value = -4;
 
 // 波動大的時候加進來的鈸
-const hat = new Tone.NoiseSynth({ envelope: { attack: 0.001, decay: 0.03, sustain: 0 } }).toDestination();
+const hat = new Tone.NoiseSynth({ envelope: { attack: 0.001, decay: 0.03, sustain: 0 } }).connect(musicBus);
 hat.volume.value = -28;
 
 // ---------- 5. 樂理 ----------
