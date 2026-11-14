@@ -13,7 +13,7 @@
 
 <style>
   /* ===== 外觀設定：只影響長相 ===== */
-  body { font-family: system-ui, sans-serif; background: #0f1115; color: #e8e8e8;
+  body { font-family: system-ui, sans-serif; background: #0f1115; transition: background 1.5s; color: #e8e8e8;
          max-width: 900px; margin: 0 auto; padding: 24px; }
   h1 { font-weight: 600; margin-bottom: 4px; }
   .subtitle { color: #9aa0a6; margin-top: 0; }
@@ -33,7 +33,7 @@
 
 <body>
   <h1>Market Symphony</h1>
-  <p class="subtitle">Hear the market: the soundtrack changes key, mood and tempo with FX prices</p>
+  <p class="subtitle">Hear the market: rising prices sound like heaven, falling prices sound like a horror film</p>
 
   <div class="chart-box"><canvas id="chart" height="120"></canvas></div>
 
@@ -51,7 +51,7 @@
   <div class="info">
     <div class="card">Time<b id="timeText">-</b></div>
     <div class="card">Price<b id="priceText">-</b></div>
-    <div class="card">Key<b id="keyText">-</b></div>
+    <div class="card">Mood<b id="keyText">-</b></div>
     <div class="card">Tempo<b id="bpmText">-</b></div>
     <div class="card">Storm<b id="stormText">-</b></div>
   </div>
@@ -59,13 +59,12 @@
 
 <script>
 // =====================================================================
-// 第二版：循環播放的遊戲 BGM，跟著市場「轉調、換情緒、變速」
+// Market Symphony：把匯率變成配樂
 //
-// 規則（作品的靈魂）：
-//   價格趨勢  → 大調 / 小調   上漲 = 明亮的大調，下跌 = 陰暗的小調
-//   價格高低  → 轉調          價格越高，整首歌的調越高
-//   波動大小  → 速度和激烈程度  越劇烈 = 越快、鼓越密、聲音越破、出現不和諧音
-// 轉調和換情緒只在「每一小節的開頭」發生，所以聽起來是順順地轉，不會亂掉。
+//   上漲 → 天堂：明亮的合唱長音 + 往上爬的鈴聲，漲越久調越高、鈴聲越密
+//   平穩 → 平靜：輕輕的和弦和零星的旋律
+//   下跌 → 恐怖：低沉的魔鬼音程 + 顫抖的詭異高音 + 心跳，跌越久越破音、心跳越快
+//   波動大 → 不管漲跌，都加快速度並加上急促的鈸聲
 // =====================================================================
 
 // ---------- 1. 資料 ----------
@@ -158,17 +157,35 @@ function loadData(d) {
 }
 
 // ---------- 2. 事先算好每個時間點的「市場狀態」 ----------
-// level：價格在最低～最高之間的位置（0～1）
-// trend：最近 16 筆的漲跌（正 = 漲，負 = 跌）
-// storm：最近幾筆的「振幅」（最高價 - 最低價）有多大，換算成 0～1（1 = 這段裡最劇烈的時候）
-let level = [], trend = [], storm = [];
+// mood：這個時間點的情緒
+//   'heaven' = 最近 15 筆明顯上漲 → 天堂般的音樂
+//   'horror' = 最近 15 筆明顯下跌 → 恐怖片般的音樂
+//   'calm'   = 漲跌不明顯         → 平靜的音樂
+// intensity：情緒有多強烈（0～1）。漲/跌得越多、而且持續越久，數字越大，音效就越深。
+// storm：最近幾筆的「振幅」（最高價 - 最低價）有多大（0～1），用來加鼓和加快速度。
+let moods = [], intensity = [], storm = [];
 
 function analyse() {
-  const min = Math.min(...prices), max = Math.max(...prices);
-  level = prices.map(p => (p - min) / (max - min || 1));
-  trend = prices.map((p, i) => p - prices[Math.max(0, i - 16)]);
+  // --- 情緒：比較「現在」和「15 筆之前」的價格 ---
+  const W = 15;
+  const diffs = prices.map((p, i) => p - prices[Math.max(0, i - W)]);
+  // 用這段資料的「一般漲跌幅度」當作尺標，這樣不同資料都能公平比較
+  const typical = Math.sqrt(diffs.reduce((a, b) => a + b * b, 0) / diffs.length) || 1;
 
-  // 振幅：如果資料有最高/最低價就用它，否則用前後兩筆的價差
+  moods = []; intensity = [];
+  let streak = 0, last = 'calm';
+  prices.forEach((p, i) => {
+    const z = diffs[i] / typical;                 // 這次漲跌是「一般幅度」的幾倍
+    const mood = z > 0.6 ? 'heaven' : z < -0.6 ? 'horror' : 'calm';
+    streak = mood === last ? streak + 1 : 0;      // 同一種情緒已經持續了幾筆
+    last = mood;
+    const strength = Math.max(0, Math.min(1, (Math.abs(z) - 0.6) / 1.5));
+    const duration = Math.min(1, streak / 48);
+    moods.push(mood);
+    intensity.push(mood === 'calm' ? 0 : 0.5 * strength + 0.5 * duration);
+  });
+
+  // --- 風暴：振幅。有最高/最低價就用它，否則用前後兩筆的價差 ---
   const changes = prices.map((p, i) =>
     Math.max(ranges[i] || 0, i === 0 ? 0 : Math.abs(p - prices[i - 1])));
   const raw = changes.map((_, i) => {
@@ -176,8 +193,7 @@ function analyse() {
     return recent.reduce((a, b) => a + b, 0) / recent.length;
   });
   const top = Math.max(...raw) || 1;
-  // 以「這段資料的一般水準（中位數）」當作平靜，最劇烈的時候當作 1。
-  // 再開 0.6 次方：讓中等程度的波動也聽得出來，不會被一次超大的暴衝壓成 0。
+  // 以「中位數」當作平靜，最劇烈的時候當作 1；開 0.6 次方讓中等波動也聽得出來
   const median = [...raw].sort((a, b) => a - b)[Math.floor(raw.length / 2)];
   storm = raw.map(v => Math.pow(Math.max(0, (v - median) / (top - median || 1)), 0.6));
 }
@@ -200,92 +216,125 @@ function drawChart() {
   chart.update();
 }
 
-// ---------- 4. 樂器（遊戲機風格） ----------
-// 破音效果：平常幾乎關掉，風暴時開大
-const distortion = new Tone.Distortion(0.6).toDestination();
-distortion.wet.value = 0;
+// ---------- 4. 樂器 ----------
+// 殘響：讓聲音像在大教堂或空曠的地方，天堂和恐怖都需要它
+const reverb = new Tone.Reverb({ decay: 5, wet: 0.45 }).toDestination();
 
-// 主旋律：方波 = 經典 8-bit 遊戲音色
-const lead = new Tone.Synth({ oscillator: { type: 'square' },
-  envelope: { attack: 0.005, decay: 0.1, sustain: 0.2, release: 0.1 } }).connect(distortion);
-lead.volume.value = -14;
+// 天堂：柔和的長音和弦（像合唱）+ 高音的鈴聲
+const pad = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'sine' },
+  envelope: { attack: 0.6, decay: 0.3, sustain: 0.8, release: 2 } }).connect(reverb);
+pad.volume.value = -14;
+const bell = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'triangle' },
+  envelope: { attack: 0.005, decay: 0.6, sustain: 0, release: 1.2 } }).connect(reverb);
+bell.volume.value = -16;
 
-// 低音
-const bass = new Tone.Synth({ oscillator: { type: 'triangle' },
-  envelope: { attack: 0.01, decay: 0.2, sustain: 0.5, release: 0.2 } }).toDestination();
-bass.volume.value = -8;
+// 平靜：輕輕的單音旋律
+const soft = new Tone.Synth({ oscillator: { type: 'triangle' },
+  envelope: { attack: 0.02, decay: 0.8, sustain: 0, release: 1 } }).connect(reverb);
+soft.volume.value = -14;
 
-// 鼓：大鼓、小鼓、鈸
-const kick = new Tone.MembraneSynth().toDestination();
-kick.volume.value = -6;
-const snare = new Tone.NoiseSynth({ envelope: { attack: 0.001, decay: 0.15, sustain: 0 } }).toDestination();
-snare.volume.value = -16;
+// 恐怖：低沉的嗡嗡聲（越恐怖越破音）+ 會顫抖的詭異高音 + 心跳
+const horrorDistortion = new Tone.Distortion(0.5).connect(reverb);
+horrorDistortion.wet.value = 0;
+const droneFilter = new Tone.Filter(500, 'lowpass').connect(horrorDistortion);
+const drone = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'sawtooth' },
+  envelope: { attack: 1, decay: 0.5, sustain: 0.9, release: 2 } }).connect(droneFilter);
+drone.volume.value = -16;
+const vibrato = new Tone.Vibrato(6, 0.5).connect(reverb);
+const eerie = new Tone.Synth({ oscillator: { type: 'sine' },
+  envelope: { attack: 0.4, decay: 0.5, sustain: 0.6, release: 1.5 } }).connect(vibrato);
+eerie.volume.value = -18;
+const heart = new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 4 }).toDestination();
+heart.volume.value = -4;
+
+// 波動大的時候加進來的鈸
 const hat = new Tone.NoiseSynth({ envelope: { attack: 0.001, decay: 0.03, sustain: 0 } }).toDestination();
-hat.volume.value = -26;
+hat.volume.value = -28;
 
-// ---------- 5. 樂理：調、和弦 ----------
-const MAJOR = [0, 2, 4, 5, 7, 9, 11];   // 大調音階（明亮）
-const MINOR = [0, 2, 3, 5, 7, 8, 10];   // 小調音階（陰暗）
-// 和弦進行（用音階的第幾個音當根音）
-const PROGRESSION = { major: [0, 4, 5, 3],   // I – V – vi – IV，超多流行歌在用
-                      minor: [0, 5, 2, 6] }; // i – VI – III – VII，很有戰鬥感
-const NOTE_NAMES = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B'];
+// ---------- 5. 樂理 ----------
+const MAJOR = [0, 2, 4, 5, 7, 9, 11];
+const HEAVEN_PROGRESSION = [0, 3, 5, 4];   // I – IV – vi – V：溫暖、往上走的感覺
+const CALM_PROGRESSION = [0, 5, 3, 4];     // I – vi – IV – V：最常見、最安心的進行
+const PENTATONIC = [0, 2, 4, 7, 9];        // 平靜旋律用的五聲音階
 
-// 目前的音樂狀態（只在小節開頭更新）
-let key = 0;          // 轉調：比 C 高幾個半音
-let mode = 'major';   // 'major' 或 'minor'
-let chordIndex = 0;   // 現在彈和弦進行裡的第幾個和弦
-
-// 拿到目前和弦的三個音（MIDI 編號，60 = 中央 C）
-function currentChord() {
-  const scale = mode === 'major' ? MAJOR : MINOR;
-  const root = PROGRESSION[mode][chordIndex];
+// 用大調音階做出一個三和弦（三個 MIDI 音高，60 = 中央 C）
+function chordAt(root, base) {
   return [0, 2, 4].map(offset => {
     const degree = root + offset;
-    return 60 + key + scale[degree % 7] + 12 * Math.floor(degree / 7);
+    return base + MAJOR[degree % 7] + 12 * Math.floor(degree / 7);
   });
 }
-
 const midi = n => Tone.Frequency(n, 'midi').toNote();   // MIDI 編號 → 音名，例如 64 → "E4"
 
-// ---------- 6. 播放：每個 16 分音符執行一次 ----------
-let step = 0;   // 播到第幾筆資料（每個 16 分音符前進一筆）
-let tick = 0;   // 這一小節的第幾個 16 分音符（0～15）
-const ARP = [0, 1, 2, 1, 0, 1, 2, 3, 0, 1, 2, 1, 2, 3, 2, 1];  // 琶音的音符順序
+// ---------- 6. 播放：每個 16 分音符執行一次（一小節 = 16 次） ----------
+let step = 0;          // 播到第幾筆資料
+let tick = 0;          // 這一小節的第幾個 16 分音符（0～15）
+let bar = 0;           // 第幾小節
+let mood = 'calm', power = 0, wind = 0;   // 這一小節的情緒、強度、風暴程度
+let chord = [60, 64, 67];                 // 這一小節的和弦
 
 function onTick(time) {
   if (step >= prices.length) { Tone.Draw.schedule(stop, time); return; }
-  const s = storm[step];
 
-  // --- 小節開頭：決定新的調、大小調、速度 ---
+  // ===== 小節開頭：決定這一小節的情緒，並彈出長音 =====
+  // 情緒只在小節開頭切換，所以音樂會順順地轉，不會亂掉
   if (tick === 0) {
-    mode = trend[step] >= 0 ? 'major' : 'minor';
-    key = Math.round(level[step] * 6) - 3;                 // -3 ～ +3 個半音
-    chordIndex = (chordIndex + 1) % 4;
-    Tone.Transport.bpm.rampTo(100 + s * 70, 0.5);          // 100 ～ 170 BPM
-    distortion.wet.rampTo(s > 0.5 ? (s - 0.5) * 1.6 : 0, 0.5);
+    mood = moods[step]; power = intensity[step]; wind = storm[step];
+    bar++;
+
+    const bpm = mood === 'heaven' ? 88 + 30 * power
+              : mood === 'horror' ? 66 + 50 * power
+              : 76;
+    Tone.Transport.bpm.rampTo(bpm + wind * 30, 1);
+    horrorDistortion.wet.rampTo(mood === 'horror' ? power * 0.8 : 0, 1);
+
+    if (mood === 'heaven') {
+      // 越強烈，整首歌的調就越往上升（最多升 5 個半音），像一路飛上天
+      chord = chordAt(HEAVEN_PROGRESSION[bar % 4], 60 + Math.round(power * 5));
+      pad.triggerAttackRelease(chord.map(midi), '1m', time, 0.5 + 0.5 * power);
+    } else if (mood === 'horror') {
+      // 低音 C + F#：「增四度」，又叫「魔鬼音程」，聽起來很不安
+      const notes = [36, 42];
+      if (power > 0.5) notes.push(37);    // 再加一個只差半音的音，更刺耳
+      drone.triggerAttackRelease(notes.map(midi), '1m', time, 0.6 + 0.4 * power);
+    } else {
+      chord = chordAt(CALM_PROGRESSION[bar % 4], 55);
+      pad.triggerAttackRelease(chord.map(midi), '1m', time, 0.3);
+    }
   }
-  // 每兩拍換一次和弦，聽起來比較有變化
-  if (tick === 8) chordIndex = (chordIndex + 1) % 4;
 
-  const chord = currentChord();
-  const notes = [...chord, chord[0] + 12];                  // 三個音 + 高八度的根音
+  // ===== 每個 16 分音符 =====
+  if (mood === 'heaven') {
+    // 往上爬的鈴聲琶音；越強烈越密、越高
+    const every = power > 0.6 ? 1 : 2;
+    if (tick % every === 0) {
+      const ladder = [...chord, ...chord.map(n => n + 12)];
+      const note = ladder[(tick / every) % ladder.length] + 12 + 12 * Math.round(power);
+      bell.triggerAttackRelease(midi(note), '8n', time, 0.6);
+    }
+    // 偶爾閃一下更高的音，像星星
+    if (Math.random() < power * 0.25) bell.triggerAttackRelease(midi(chord[2] + 36), '16n', time, 0.4);
+  } else if (mood === 'horror') {
+    // 心跳「咚—咚」，越恐怖跳越快
+    const beats = power > 0.75 ? [0, 2, 4, 6, 8, 10, 12, 14] : power > 0.4 ? [0, 2, 8, 10] : [0, 2];
+    if (beats.includes(tick)) heart.triggerAttackRelease(tick % 4 === 0 ? 'C1' : 'A0', '8n', time);
+    // 詭異的高音，會顫抖，越恐怖越常出現
+    if ((tick === 4 || tick === 12) && Math.random() < 0.3 + 0.6 * power) {
+      const scary = [73, 78, 83][Math.floor(Math.random() * 3)];
+      eerie.triggerAttackRelease(midi(scary), '2n', time);
+    }
+  } else {
+    // 平靜：慢慢地、隨意地彈幾個五聲音階的音
+    if (tick % 4 === 0 && Math.random() < 0.6) {
+      const note = 67 + PENTATONIC[Math.floor(Math.random() * PENTATONIC.length)];
+      soft.triggerAttackRelease(midi(note), '4n', time, 0.5);
+    }
+  }
 
-  // --- 主旋律：琶音 ---
-  let note = notes[ARP[tick]] + 12;
-  if (s > 0.7 && Math.random() < s - 0.5) note += 6;       // 風暴時偶爾冒出刺耳的增四度
-  lead.triggerAttackRelease(midi(note), '16n', time);
+  // 波動很大時，不管什麼情緒都加上急促的鈸聲
+  if ((wind > 0.45 && tick % 2 === 0) || wind > 0.75) hat.triggerAttackRelease('32n', time);
 
-  // --- 低音：每拍一下 ---
-  if (tick % 4 === 0) bass.triggerAttackRelease(midi(chord[0] - 24), '8n', time);
-
-  // --- 鼓：越劇烈越密 ---
-  if (tick % 4 === 0) kick.triggerAttackRelease('C1', '8n', time);
-  if (s > 0.35 && (tick === 4 || tick === 12)) snare.triggerAttackRelease('16n', time);
-  if (s > 0.75 && tick % 2 === 1) kick.triggerAttackRelease('C1', '16n', time);
-  if (tick % 2 === 0 || s > 0.5) hat.triggerAttackRelease('32n', time);
-
-  // --- 更新畫面（Tone.Draw 讓畫面和聲音同步） ---
+  // 更新畫面（Tone.Draw 讓畫面和聲音同步）
   const i = step;
   Tone.Draw.schedule(() => updateScreen(i), time);
 
@@ -293,23 +342,32 @@ function onTick(time) {
   tick = (tick + 1) % 16;
 }
 
+const MOOD_STYLE = {
+  heaven: { label: 'Heaven', color: '#f5c542', background: '#1c1a10' },
+  horror: { label: 'Horror', color: '#ff4d4f', background: '#1c0d10' },
+  calm:   { label: 'Calm',   color: '#3ecf8e', background: '#0f1115' }
+};
+
 function updateScreen(i) {
   const marker = prices.map(() => null);
   marker[i] = prices[i];
   chart.data.datasets[1].data = marker;
   chart.update();
 
+  const style = MOOD_STYLE[moods[i]];
+  document.body.style.background = style.background;     // 背景顏色跟著情緒變
+  const moodText = document.getElementById('keyText');
+  moodText.textContent = style.label + (moods[i] === 'calm' ? '' : ' ' + Math.round(intensity[i] * 100) + '%');
+  moodText.style.color = style.color;
+
   const s = storm[i];
   document.getElementById('timeText').textContent = times[i];
   document.getElementById('priceText').textContent = prices[i].toFixed(5);
-  document.getElementById('keyText').textContent =
-    NOTE_NAMES[(key + 12) % 12] + (mode === 'major' ? ' major' : ' minor');
   document.getElementById('bpmText').textContent = Math.round(Tone.Transport.bpm.value) + ' bpm';
-  document.getElementById('stormText').textContent =
-    s > 0.7 ? 'Storm' : s > 0.35 ? 'Choppy' : 'Calm';
-  const bar = document.getElementById('meterBar');
-  bar.style.width = Math.round(s * 100) + '%';
-  bar.style.background = s > 0.7 ? '#ff4d4f' : s > 0.35 ? '#faad14' : '#3ecf8e';
+  document.getElementById('stormText').textContent = s > 0.7 ? 'Storm' : s > 0.35 ? 'Choppy' : 'Calm';
+  const meter = document.getElementById('meterBar');
+  meter.style.width = Math.round(s * 100) + '%';
+  meter.style.background = s > 0.7 ? '#ff4d4f' : s > 0.35 ? '#faad14' : '#3ecf8e';
 }
 
 // ---------- 7. 按鈕 ----------
@@ -319,7 +377,7 @@ async function play() {
   await Tone.start();                       // 瀏覽器規定要使用者按下按鈕才能發聲
   if (step >= prices.length) step = 0;
   tick = 0;
-  Tone.Transport.bpm.value = 100;
+  Tone.Transport.bpm.value = 76;
   loopId = Tone.Transport.scheduleRepeat(onTick, '16n');
   Tone.Transport.start();
   document.getElementById('playBtn').disabled = true;
