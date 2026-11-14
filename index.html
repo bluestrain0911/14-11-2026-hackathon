@@ -8,6 +8,8 @@
 <!-- 外部函式庫（需要網路）：Chart.js 畫圖、Tone.js 做音樂 -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.js"></script>
+<!-- SGX FX 的真實資料（和 index.html 放在同一個資料夾） -->
+<script src="data.js"></script>
 
 <style>
   /* ===== 外觀設定：只影響長相 ===== */
@@ -20,7 +22,8 @@
   button { background: #2b6cff; color: white; border: none; border-radius: 8px;
            padding: 10px 18px; font-size: 16px; cursor: pointer; }
   button:disabled { background: #444; cursor: default; }
-  .info { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .info { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  select { font-size: 15px; padding: 8px; border-radius: 8px; background: #171a21; color: #e8e8e8; border: 1px solid #333; }
   .card { background: #171a21; border-radius: 10px; padding: 10px 12px; color: #9aa0a6; font-size: 13px; }
   .card b { display: block; color: #e8e8e8; font-size: 20px; margin-top: 4px; }
   .meter { height: 10px; background: #2a2e36; border-radius: 5px; overflow: hidden; margin-top: 16px; }
@@ -37,10 +40,16 @@
   <div class="controls">
     <button id="playBtn">▶ Play</button>
     <button id="stopBtn" disabled>■ Stop</button>
+    <select id="datasetSelect"></select>
+    <select id="viewSelect">
+      <option value="storm">Zoom: biggest storm</option>
+      <option value="day">Whole day</option>
+    </select>
     <label>Load CSV <input id="fileInput" type="file" accept=".csv"></label>
   </div>
 
   <div class="info">
+    <div class="card">Time<b id="timeText">-</b></div>
     <div class="card">Price<b id="priceText">-</b></div>
     <div class="card">Key<b id="keyText">-</b></div>
     <div class="card">Tempo<b id="bpmText">-</b></div>
@@ -60,39 +69,98 @@
 // =====================================================================
 
 // ---------- 1. 資料 ----------
-let prices = [];
+// 一份資料 = { t: 時間, c: 收盤價, h: 最高價, l: 最低價 }，每個都是一串數字（陣列）
+// full 是整份資料；prices / ranges / times 是「現在要播放的那一段」
+let full = null;
+let prices = [], ranges = [], times = [];
 
-// 假資料：前段平穩微漲、中段開始下跌、後段暴跌（模擬市場風暴）
+// 假資料：前段平穩、中段下跌、後段暴跌（沒有真實資料時用）
 function makeFakeData() {
-  const data = [];
+  const d = { t: [], c: [], h: [], l: [] };
   let price = 1.30;
   for (let i = 0; i < 256; i++) {
-    let size = 0.0015, drift = 0.0002;               // 平穩
-    if (i > 110) { size = 0.004; drift = -0.0008; }  // 開始緊張
-    if (i > 170) { size = 0.012; drift = -0.003; }   // 風暴
+    let size = 0.0015, drift = 0.0002;
+    if (i > 110) { size = 0.004; drift = -0.0008; }
+    if (i > 170) { size = 0.012; drift = -0.003; }
+    const prev = price;
     price += drift + (Math.random() - 0.5) * size;
-    data.push(Number(price.toFixed(4)));
+    d.t.push('step ' + i);
+    d.c.push(price);
+    d.h.push(Math.max(prev, price));
+    d.l.push(Math.min(prev, price));
   }
-  return data;
+  return d;
 }
 
-// 讀 CSV：每一行抓「最後一個是數字的欄位」當價格
+// 讀 CSV。如果有 SGX FX 格式的欄位（close_mid 等）就用它們；
+// 否則每一行抓「最後一個是數字的欄位」當價格。
 function parseCsv(text) {
-  const result = [];
-  for (const line of text.split(/\r?\n/)) {
-    const cells = line.split(',');
-    for (let i = cells.length - 1; i >= 0; i--) {
-      const v = parseFloat(cells[i]);
-      if (!isNaN(v)) { result.push(v); break; }
+  const lines = text.trim().split(/\r?\n/);
+  const header = lines[0].split(',');
+  const col = name => header.indexOf(name);
+  const d = { t: [], c: [], h: [], l: [] };
+
+  if (col('close_mid') >= 0) {
+    for (const line of lines.slice(1)) {
+      const x = line.split(',');
+      d.t.push((x[col('timestamp')] || '').slice(11, 16));
+      d.c.push(parseFloat(x[col('close_mid')]));
+      d.h.push(parseFloat(x[col('high_mid')]));
+      d.l.push(parseFloat(x[col('low_mid')]));
+    }
+  } else {
+    lines.forEach((line, i) => {
+      const cells = line.split(',');
+      for (let k = cells.length - 1; k >= 0; k--) {
+        const v = parseFloat(cells[k]);
+        if (!isNaN(v)) { d.t.push('row ' + i); d.c.push(v); d.h.push(v); d.l.push(v); break; }
+      }
+    });
+  }
+  return d;
+}
+
+// 從整份資料裡選出要播放的那一段
+//  "storm"：找出一分鐘內振幅最大的時刻，取它前 90 分鐘、後 60 分鐘（約 2.5 分鐘的音樂）
+//  "day"：整天壓縮成約 240 步（每一步合併好幾分鐘）
+function selectView() {
+  const view = document.getElementById('viewSelect').value;
+  const n = full.c.length;
+  prices = []; ranges = []; times = [];
+
+  if (view === 'storm') {
+    let peak = 0;
+    for (let i = 0; i < n; i++) {
+      if (full.h[i] - full.l[i] > full.h[peak] - full.l[peak]) peak = i;
+    }
+    const start = Math.max(0, peak - 90), end = Math.min(n, peak + 60);
+    for (let i = start; i < end; i++) {
+      prices.push(full.c[i]); ranges.push(full.h[i] - full.l[i]); times.push(full.t[i]);
+    }
+  } else {
+    const size = Math.max(1, Math.ceil(n / 240));    // 每一步合併幾分鐘
+    for (let i = 0; i < n; i += size) {
+      const end = Math.min(n, i + size);
+      const hi = Math.max(...full.h.slice(i, end)), lo = Math.min(...full.l.slice(i, end));
+      prices.push(full.c[end - 1]); ranges.push(hi - lo); times.push(full.t[i]);
     }
   }
-  return result;
+}
+
+// 換一份資料：選出要播的那一段 → 分析 → 畫圖
+function loadData(d) {
+  stop();
+  full = d;
+  selectView();
+  step = 0;
+  analyse();
+  drawChart();
 }
 
 // ---------- 2. 事先算好每個時間點的「市場狀態」 ----------
 // level：價格在最低～最高之間的位置（0～1）
 // trend：最近 16 筆的漲跌（正 = 漲，負 = 跌）
-// storm：最近 10 筆的波動有多大，換算成 0～1（1 = 整段資料裡最劇烈的時候）
+// storm：最近幾筆的「振幅」（最高價 - 最低價）有多大，換算成 0～1（1 = 這段裡最劇烈的時候）
 let level = [], trend = [], storm = [];
 
 function analyse() {
@@ -100,13 +168,18 @@ function analyse() {
   level = prices.map(p => (p - min) / (max - min || 1));
   trend = prices.map((p, i) => p - prices[Math.max(0, i - 16)]);
 
-  const changes = prices.map((p, i) => (i === 0 ? 0 : Math.abs(p - prices[i - 1])));
+  // 振幅：如果資料有最高/最低價就用它，否則用前後兩筆的價差
+  const changes = prices.map((p, i) =>
+    Math.max(ranges[i] || 0, i === 0 ? 0 : Math.abs(p - prices[i - 1])));
   const raw = changes.map((_, i) => {
     const recent = changes.slice(Math.max(0, i - 9), i + 1);
     return recent.reduce((a, b) => a + b, 0) / recent.length;
   });
   const top = Math.max(...raw) || 1;
-  storm = raw.map(v => v / top);
+  // 以「這段資料的一般水準（中位數）」當作平靜，最劇烈的時候當作 1。
+  // 再開 0.6 次方：讓中等程度的波動也聽得出來，不會被一次超大的暴衝壓成 0。
+  const median = [...raw].sort((a, b) => a - b)[Math.floor(raw.length / 2)];
+  storm = raw.map(v => Math.pow(Math.max(0, (v - median) / (top - median || 1)), 0.6));
 }
 
 // ---------- 3. 畫圖 ----------
@@ -121,7 +194,7 @@ const chart = new Chart(document.getElementById('chart'), {
 });
 
 function drawChart() {
-  chart.data.labels = prices.map((_, i) => i);
+  chart.data.labels = times;
   chart.data.datasets[0].data = prices;
   chart.data.datasets[1].data = prices.map(() => null);
   chart.update();
@@ -227,7 +300,8 @@ function updateScreen(i) {
   chart.update();
 
   const s = storm[i];
-  document.getElementById('priceText').textContent = prices[i].toFixed(4);
+  document.getElementById('timeText').textContent = times[i];
+  document.getElementById('priceText').textContent = prices[i].toFixed(5);
   document.getElementById('keyText').textContent =
     NOTE_NAMES[(key + 12) % 12] + (mode === 'major' ? ' major' : ' minor');
   document.getElementById('bpmText').textContent = Math.round(Tone.Transport.bpm.value) + ' bpm';
@@ -266,18 +340,32 @@ document.getElementById('fileInput').addEventListener('change', async (event) =>
   const file = event.target.files[0];
   if (!file) return;
   const loaded = parseCsv(await file.text());
-  if (loaded.length < 20) { alert('Could not find enough prices in this CSV'); return; }
-  stop();
-  prices = loaded;
-  step = 0;
-  analyse();
-  drawChart();
+  if (loaded.c.length < 20) { alert('Could not find enough prices in this CSV'); return; }
+  datasets[file.name] = loaded;
+  addOption(file.name);
+  document.getElementById('datasetSelect').value = file.name;
+  loadData(loaded);
 });
 
-// 一打開網頁就載入假資料
-prices = makeFakeData();
-analyse();
-drawChart();
+// ---------- 8. 資料選單 ----------
+// 內建的資料：data.js 裡 SGX FX 的真實資料 + 一份假資料
+const datasets = {};
+if (typeof MARKET_DATA !== 'undefined') Object.assign(datasets, MARKET_DATA);
+datasets['Demo (fake storm)'] = makeFakeData();
+
+function addOption(name) {
+  const option = document.createElement('option');
+  option.value = name;
+  option.textContent = name;
+  document.getElementById('datasetSelect').appendChild(option);
+}
+Object.keys(datasets).forEach(addOption);
+
+document.getElementById('datasetSelect').addEventListener('change', e => loadData(datasets[e.target.value]));
+document.getElementById('viewSelect').addEventListener('change', () => loadData(full));
+
+// 一打開網頁就載入第一份資料
+loadData(datasets[Object.keys(datasets)[0]]);
 </script>
 </body>
 </html>
