@@ -1,30 +1,30 @@
 // =====================================================================
-// 即時監控模式（模擬）
+// Live monitor mode (simulated)
 //
-// 外匯市場週末休市，所以用 SGX FX 的真實歷史資料「假裝」即時：
-// 每隔一段真實時間（例如 5 秒）才送來下一分鐘的價格，就像接上真的市場一樣。
+// The FX market is closed at weekends, so we use real historical SGX FX data to "pretend" to be live:
+// the next minute's price only arrives after a stretch of real time (e.g. 5 seconds), just like a real market feed.
 //
-// 跟回放模式最大的不同：這裡「看不到未來」。
-//   - 音樂只能用過去的價格判斷（causalMode），所以會比價格慢一點才切換 —— 這就是真實使用時的情況
-//   - 風暴預警本來就只看過去，所以完全一樣
-// 另外示範「資料中斷」：沒有新資料時，不能假裝市場還在動 → 音樂淡出、語音警告。
+// The biggest difference from replay mode: here we "can't see the future".
+//   - The music can only judge from past prices (causalMode), so it switches a little after the price — just like real use
+//   - The storm warning only ever looked at the past, so it's exactly the same
+// Also demonstrates a "feed outage": with no new data we must not pretend the market is moving → music fades out, voice warning.
 // =====================================================================
 
 let liveActive = false;
-let nextStepAt = 0;          // 下一筆資料什麼時候「送到」
-let lastDataAt = 0;          // 上一筆資料是什麼時候送到的
-let outage = false;          // 模擬資料中斷
-let stale = false;           // 是否已經太久沒有新資料
+let nextStepAt = 0;          // When the next data point "arrives"
+let lastDataAt = 0;          // When the previous data point arrived
+let outage = false;          // Simulated feed outage
+let stale = false;           // Whether we've gone too long without new data
 let liveTimer = null;
 let liveLastWarn = 0, liveLastMood = 'calm';
 const originalTitle = document.title;
 
 // =====================================================================
-// 背景模式：長時間開著也不會煩
-//   continuous：一直播音樂（demo、學習用）
-//   ambient   ：平常音量很小；有事發生時音樂漸強 30 秒，再慢慢變小
-//   alerts    ：平常完全安靜；有事發生時只播 1～2 秒的短提示音
-// 警報聲、暴衝音效、語音播報不受影響，永遠都會響
+// Background modes: not annoying even when left open for a long time
+//   continuous: music plays all the time (demo, learning)
+//   ambient   : very quiet normally; when something happens the music swells for 30 seconds, then slowly fades
+//   alerts    : completely silent normally; when something happens, only a 1–2 second cue plays
+// Alarm sounds, spike sounds and voice announcements are unaffected and always play
 // =====================================================================
 const AMBIENT_LEVEL = 0.08;
 let swellTimer = null;
@@ -32,28 +32,28 @@ let heartbeatTimer = null;
 const bgMode = () => document.getElementById('bgMode').value;
 
 // =====================================================================
-// 安靜模式：平穩超過一段時間 → 音樂和播報都停；等到有明顯的漲跌、風暴或暴衝才恢復
+// Quiet mode: calm for long enough → music and commentary stop; they resume on a clear rise/fall, a storm or a spike
 // =====================================================================
-let liveQuiet = false;       // 現在是不是「安靜中」
-let calmStreak = 0;          // 已經連續平穩幾分鐘（市場時間）
-let quietAnchor = 0;         // 開始安靜時的價格水準
-let normalMove = 1e-9;       // 「一般」10 分鐘會走多遠（用歷史資料算）
-const quietAfter = () => Number(document.getElementById('quietAfter').value);   // 0 = 關閉
+let liveQuiet = false;       // Are we "quiet" right now
+let calmStreak = 0;          // How many minutes in a row it's been calm (market time)
+let quietAnchor = 0;         // Price level when we went quiet
+let normalMove = 1e-9;       // How far it "normally" moves in 10 minutes (from historical data)
+const quietAfter = () => Number(document.getElementById('quietAfter').value);   // 0 = off
 
 function goQuiet() {
   liveQuiet = true;
-  musicBus.gain.rampTo(0, 3);                      // 音樂慢慢淡出
+  musicBus.gain.rampTo(0, 3);                      // Fade the music out slowly
   if (typeof stopSpeech === 'function') stopSpeech();
-  // 說清楚為什麼沒聲音了，不然會以為壞掉
+  // Explain why the sound stopped, otherwise people think it's broken
   if (document.getElementById('narratorOn').checked) speakLine('Market is quiet. Pausing the music until something happens.', 'pro');
   else playCue('calm');
 }
 function wakeUp() {
   liveQuiet = false;
-  applyBackgroundMode();                           // 音樂恢復（依照目前的背景模式）
+  applyBackgroundMode();                           // Bring the music back (according to the current background mode)
 }
 
-// 短提示音：上漲 = 往上的三個音；下跌 = 往下的低音；回到平靜 = 一聲輕輕的叮
+// Short cues: rising = three notes going up; falling = low notes going down; back to calm = one soft ding
 const cue = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'triangle' },
   envelope: { attack: 0.005, decay: 0.4, sustain: 0, release: 0.4 } }).toDestination();
 cue.volume.value = -8;
@@ -69,7 +69,7 @@ function applyBackgroundMode() {
   musicBus.gain.rampTo(level, 1);
 }
 
-// 有事發生：ambient → 音樂漸強 30 秒；alerts → 播短提示音
+// Something happened: ambient → music swells for 30 seconds; alerts → play a short cue
 function somethingHappened(kind) {
   if (bgMode() === 'ambient') {
     musicBus.gain.rampTo(1, 1.5);
@@ -80,7 +80,7 @@ function somethingHappened(kind) {
   }
 }
 
-// 定時的「心跳聲」：告訴使用者系統還活著（資料中斷時不響）
+// Regular "heartbeat" ping: tells the user the system is alive (silent during a feed outage)
 function startHeartbeat() {
   clearInterval(heartbeatTimer);
   const every = Number(document.getElementById('heartbeat').value);
@@ -95,7 +95,7 @@ function startHeartbeat() {
 document.getElementById('bgMode').addEventListener('change', () => { if (liveActive) applyBackgroundMode(); });
 document.getElementById('heartbeat').addEventListener('change', () => { if (liveActive) startHeartbeat(); });
 
-// 下拉選單：全部 53 天，或某一天
+// Dropdown: all 53 days, or a single day
 const realDays = Object.keys(datasets).filter(name => !name.startsWith('Demo'));
 ['ALL', ...realDays].forEach(name => {
   const option = document.createElement('option');
@@ -104,19 +104,19 @@ const realDays = Object.keys(datasets).filter(name => !name.startsWith('Demo'));
   document.getElementById('liveDay').appendChild(option);
 });
 
-// 圖表要顯示哪些點（全部 7 萬多分鐘畫不下，所以歷史部分會抽樣）
-let shownIndex = [];         // 圖上每個點對應到資料的第幾筆
-let liveFrom = 0;            // 從第幾筆開始「即時」播放（= 90% 的位置）
-let liveEvery = 1;           // 即時部分每幾筆畫一個點
-let liveShown = [];          // 目前圖上畫的是哪些資料
+// Which points the chart shows (70,000+ minutes won't fit, so the history is sampled)
+let shownIndex = [];         // Which data index each point on the chart corresponds to
+let liveFrom = 0;            // Which index "live" playback starts from (= the 90% mark)
+let liveEvery = 1;           // Draw one point every this many live data points
+let liveShown = [];          // Which data the chart is currently drawing
 
-// 把選到的資料接成一條連續的時間序列
+// Join the chosen data into one continuous time series
 function buildSeries(choice) {
   const days = choice === 'ALL' ? realDays : [choice];
   prices = []; ranges = []; times = [];
   days.forEach(name => {
     const d = datasets[name];
-    const date = name.replace(/^EUR\/USD \w+ (\d+ \w+).*$/, '$1');          // 例如 "14 Jul"
+    const date = name.replace(/^EUR\/USD \w+ (\d+ \w+).*$/, '$1');          // e.g. "14 Jul"
     d.c.forEach((c, k) => {
       prices.push(c);
       ranges.push(d.h[k] - d.l[k]);
@@ -127,8 +127,8 @@ function buildSeries(choice) {
 
 const liveInterval = () => Number(document.getElementById('liveSpeed').value);
 
-// 資料「送達」：用自己的計時器，跟音樂引擎分開。
-// 這樣就算音樂卡住、分頁跑到背景，資料也照樣進來；只有真的沒資料（模擬中斷）時才會顯示 feed down。
+// Data "delivery": uses its own timer, separate from the music engine.
+// So even if the music stalls or the tab is in the background, data keeps coming; "feed down" only shows when there really is no data (simulated outage).
 let feedTimer = null;
 function feedTick() {
   if (!liveActive || outage) return;
@@ -144,7 +144,7 @@ function feedTick() {
   step++;
   nextStepAt = now + liveInterval();
   lastDataAt = now;
-  // 資料又進來了：如果剛才判定為中斷，自動恢復音樂（不用手動按 Restore）
+  // Data is flowing again: if we'd flagged an outage, restore the music automatically (no need to press Restore)
   if (stale) {
     stale = false;
     Tone.Destination.volume.rampTo(Number(document.getElementById('volume').value) || 0, 1);
@@ -156,25 +156,25 @@ function feedTick() {
 async function startLive() {
   stopLive();
   buildSeries(document.getElementById('liveDay').value);
-  causalMode = true;              // 只用過去的資料判斷
+  causalMode = true;              // Judge using past data only
   analyse();
   causalMode = false;
-  causalLines = true;             // 圖表用「只看過去」的方式上色
+  causalLines = true;             // Colour the chart "past-only"
   computeRecentScales();
 
-  // 前 90% 當作「已經發生的歷史」直接畫出來，從 90% 的位置開始即時播放到 100%
+  // Draw the first 90% straight away as "history that already happened", then play live from the 90% mark to 100%
   liveFrom = Math.floor(prices.length * 0.9);
-  posEntry = prices[liveFrom];     // 假設在即時資料開始時進場
+  posEntry = prices[liveFrom];     // Assume we entered the trade when the live data started
   step = liveFrom;
   const historyEvery = Math.max(1, Math.ceil(liveFrom / 500));
-  liveEvery = 1;                  // 即時進來的每一筆都畫出來
+  liveEvery = 1;                  // Draw every live data point
   shownIndex = [];
   for (let k = 0; k < liveFrom; k += historyEvery) shownIndex.push(k);
   liveLastWarn = warnLevel[step] || 0;
   liveLastMood = moodAt(step);
 
   chart.data.datasets[0].segment = {
-    // 歷史 = 灰色實線；即時的部分 = 依照情緒上色
+    // History = solid grey line; the live part = coloured by mood
     borderColor: ctx => liveShown[ctx.p0DataIndex] < liveFrom ? '#6b7385' : lineColor(liveShown[ctx.p0DataIndex])
   };
   document.getElementById('liveStatus').textContent =
@@ -183,7 +183,7 @@ async function startLive() {
   liveActive = true;
   outage = false; stale = false;
   liveQuiet = false; calmStreak = 0;
-  // 一般 10 分鐘會走多遠：用 90% 的歷史資料算中位數
+  // How far it normally moves in 10 minutes: median over the 90% of historical data
   const moves = [];
   for (let k = Math.max(10, liveFrom - 5000); k < liveFrom; k++) moves.push(Math.abs(prices[k] - prices[k - 10]));
   moves.sort((a, b) => a - b);
@@ -210,18 +210,18 @@ function stopLive() {
   clearInterval(heartbeatTimer);
   clearTimeout(swellTimer);
   stop();
-  musicBus.gain.rampTo(1, 0.5);           // 離開即時模式，其他模式的音樂恢復正常
+  musicBus.gain.rampTo(1, 0.5);           // Leaving live mode: other modes' music goes back to normal
   document.title = originalTitle;
   Tone.Destination.volume.rampTo(Number(document.getElementById('volume').value) || 0, 0.5);
   document.getElementById('liveStatus').textContent = 'Stopped.';
 }
 
-// 每一筆新資料送到時（由 updateScreen 呼叫）
+// Called whenever a new data point arrives (from updateScreen)
 function liveStep(i) {
   try { updateExposure(i); } catch (e) { console.warn('Exposure skipped:', e.message); }
-  // 圖表有兩種看法：
-  //   近期（預設）：只看最近 4 小時，每分鐘一個點，線會一直往左捲，看得出在動
-  //   全部：前 90% 的歷史（抽樣）+ 即時進來的每一筆
+  // Two ways to view the chart:
+  //   Recent (default): only the last 4 hours, one point per minute; the line keeps scrolling left so you can see it moving
+  //   Full: the first 90% of history (sampled) + every live point
   if (i >= liveFrom && shownIndex[shownIndex.length - 1] !== i) shownIndex.push(i);
   let shown;
   if (document.getElementById('liveView').value === 'recent') {
@@ -240,14 +240,14 @@ function liveStep(i) {
   chart.data.datasets[1].data = marker;
   chart.update();
 
-  // 瀏覽器分頁標題：切到別的分頁也看得到狀況
+  // Browser tab title: you can see the state even from another tab
   const label = { heaven: 'Rising', horror: 'Falling', calm: 'Calm' }[moodAt(i)];
   const warn = warnLevel[i] || 0;
   document.title = (liveQuiet ? '😴 ' : warn === 2 ? '🔴 STORM · ' : warn === 1 ? '🟡 ' : '🎵 ') + 'EUR/USD ' + prices[i].toFixed(5) + ' · ' + label;
 
-  // 安靜模式（跟線的顏色一致）：
-  //   「平穩」= 最近 N 分鐘的線全部是灰色，而且沒有警報、沒有暴衝 → 音樂和播報停止
-  //   「醒來」= 線連續 2 分鐘是同一個有顏色的方向（金色／紅色…），或價格離開安靜時的水準很多，或出現警報、暴衝
+  // Quiet mode (consistent with the line colours):
+  //   "Calm" = the line has been all grey for the last N minutes, with no warnings or spikes → music and commentary stop
+  //   "Wake up" = the line is the same coloured direction (gold / red …) for 2 minutes in a row, or the price moves far from where it went quiet, or a warning or spike appears
   const N = quietAfter();
   const wasQuiet = liveQuiet;
   if (N && !liveQuiet && i - N >= liveFrom) {
@@ -257,25 +257,25 @@ function liveStep(i) {
   } else if (liveQuiet) {
     const coloured = moodAt(i) !== 'calm' && moodAt(i) === moodAt(i - 1);
     const bigMove = Math.abs(prices[i] - quietAnchor) > 2 * normalMove;
-    if (coloured || bigMove || (warnLevel[i] || 0) > 0 || spikes[i]) wakeUp();   // 有明顯的動靜了：醒來
+    if (coloured || bigMove || (warnLevel[i] || 0) > 0 || spikes[i]) wakeUp();   // Something clear is happening: wake up
   }
 
-  // 播報：情緒改變、風暴預警
+  // Commentary: mood changes, storm warnings
   const facts = { time: times[i], price: prices[i].toFixed(5), volatilityTimesNormal: (stormRatio[i] || 1).toFixed(1) };
   const ex = exposureAt(i);
   if (ex) facts.myPositionCouldSwingIn10MinUSD = Math.round(ex.risk10);
-  if (liveQuiet) { /* 安靜中：不播報 */ }
-  else if (warn > liveLastWarn) { narrate('stormWarning', facts, warn === 2); somethingHappened(null); }   // 警報聲本來就會響
+  if (liveQuiet) { /* Quiet: no commentary */ }
+  else if (warn > liveLastWarn) { narrate('stormWarning', facts, warn === 2); somethingHappened(null); }   // The alarm sound plays anyway
   else if (moodAt(i) !== liveLastMood || wasQuiet) { narrate(moodAt(i), facts, wasQuiet); somethingHappened(moodAt(i)); }
   if (spikes[i] && !liveQuiet) { somethingHappened(null); if (Math.abs(spikes[i]) > 25 * spikeScale) narrate('spike', facts, true); }
   liveLastWarn = warn;
   liveLastMood = moodAt(i);
 }
 
-// 每秒檢查一次：資料多久沒更新了？
+// Check once a second: how long since the data last updated?
 function checkFeed() {
   if (!liveActive) return;
-  // 保險：資料計時器如果因為任何原因沒在推進，這裡直接幫它推一步（模擬中斷時除外）
+  // Safety net: if the data timer isn't advancing for any reason, push it one step from here (except during a simulated outage)
   if (!outage && performance.now() - lastDataAt > liveInterval() * 1.5 + 1000) {
     console.warn('Live feed timer was late — advancing it from the checker. step=', step);
     nextStepAt = 0;
@@ -283,13 +283,13 @@ function checkFeed() {
     clearInterval(feedTimer); feedTimer = setInterval(feedTick, 50);
   }
   const secondsAgo = (performance.now() - lastDataAt) / 1000;
-  const limit = Math.max(8, liveInterval() / 1000 * 3);    // 超過 3 個更新週期沒資料就算中斷
+  const limit = Math.max(8, liveInterval() / 1000 * 3);    // No data for more than 3 update periods counts as an outage
   const status = document.getElementById('liveStatus');
   const i = step;
 
-  // （音樂引擎卡住的情況，交給主程式的看門狗處理）
+  // (A stalled music engine is handled by the main watchdog)
 
-  // 聲音被瀏覽器暫停了（例如電腦睡眠後）：這跟資料無關，要分開講清楚
+  // Sound was paused by the browser (e.g. after the computer slept): this has nothing to do with the data, so say so separately
   if (Tone.context.state !== 'running') {
     status.innerHTML = '<b style="color:#faad14">🔇 Sound is paused by the browser — click anywhere on the page to resume.</b>';
     return;
@@ -297,7 +297,7 @@ function checkFeed() {
 
   if (secondsAgo > limit && !stale) {
     stale = true;
-    Tone.Destination.volume.rampTo(-40, 2);                 // 音樂淡出：沒有資料就不能假裝市場還在動
+    Tone.Destination.volume.rampTo(-40, 2);                 // Fade out the music: with no data we must not pretend the market is moving
     document.title = '⚠️ NO DATA · EUR/USD';
     speakLine('Warning. No new market data for ' + Math.round(secondsAgo) + ' seconds. The feed may be down.', 'pro');
   }
@@ -305,7 +305,7 @@ function checkFeed() {
     status.innerHTML = '<b style="color:#ff4d4f">⚠️ No new data for ' + Math.round(secondsAgo) +
       ' s — feed may be down. Music paused so it never pretends the market is moving.</b>';
   } else {
-    // 用一句白話告訴使用者「現在市場怎麼樣」
+    // Tell the user in one plain sentence "what the market is doing now"
     let calmFor = 0;
     for (let k = i; k >= liveFrom && moodAt(k) === 'calm' && !warnLevel[k]; k--) calmFor++;
     const warn = warnLevel[i] || 0;
@@ -320,7 +320,7 @@ function checkFeed() {
   }
 }
 
-// 模擬資料中斷／恢復
+// Simulate a feed outage / restore
 document.getElementById('outageBtn').addEventListener('click', () => {
   if (!liveActive) return;
   outage = !outage;
@@ -340,9 +340,9 @@ document.getElementById('liveStopBtn').addEventListener('click', stopLive);
 
 
 // =====================================================================
-// 我的部位（Challenge 1：Understand your exposure）
-// 把市場的變化換算成「我的錢」：目前盈虧、接下來 10 分鐘的風險、今天最大的一分鐘衝擊
-// 1 歐元部位，價格每變 0.0001（1 pip）= 0.0001 美元；€1,000,000 → 每 pip $100
+// My position (Challenge 1: Understand your exposure)
+// Turn market moves into "my money": current P&L, risk over the next 10 minutes, today's biggest one-minute hit
+// For a €1 position, each 0.0001 move (1 pip) = $0.0001; €1,000,000 → $100 per pip
 // =====================================================================
 let posEntry = null;
 const posSide = () => Number(document.getElementById('posSide').value);
@@ -353,12 +353,12 @@ function exposureAt(i) {
   const side = posSide(), size = posSize();
   if (!side || !size || posEntry === null) return null;
   const pnl = side * size * (prices[i] - posEntry);
-  // 最近 10 分鐘的高低差：波動會延續，所以接下來 10 分鐘「很可能」也晃這麼大
+  // High-low range over the last 10 minutes: volatility persists, so the next 10 minutes will "probably" swing about as much
   const from = Math.max(0, i - 9);
   let hi = -Infinity, lo = Infinity;
   for (let k = from; k <= i; k++) { hi = Math.max(hi, prices[k] + (ranges[k] || 0) / 2); lo = Math.min(lo, prices[k] - (ranges[k] || 0) / 2); }
   const risk10 = size * (hi - lo);
-  // 今天到目前為止，最大的一分鐘變動（最壞的一下）
+  // The biggest one-minute move so far today (the worst hit)
   let worst = 0;
   for (let k = 1; k <= i; k++) worst = Math.max(worst, Math.abs(prices[k] - prices[k - 1]));
   return { pnl, risk10, worstHit: size * worst, perPip: size * 0.0001 };

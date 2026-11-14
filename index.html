@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Market Symphony</title>
 
-<!-- 外部函式庫（需要網路）：Chart.js 畫圖、Tone.js 做音樂 -->
+<!-- External libraries (need internet): Chart.js for charts, Tone.js for music -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.js" crossorigin="anonymous"></script>
-<!-- SGX FX 的真實資料（和 index.html 放在同一個資料夾） -->
+<!-- Real SGX FX data (kept in the same folder as index.html) -->
 <script>
-// 計時器裡的錯誤（尤其是本機檔案 file:// 的程式）在瀏覽器裡只會顯示 "Script error."。
-// 這裡把每個計時器包起來：出錯時記下完整的錯誤訊息，而且不會讓計時器之後的工作停掉。
+// Errors inside timers (especially from local file:// scripts) only show up in the browser as "Script error.".
+// Wrap every timer here: on error, log the full message, and keep the timer's later work from stopping.
 (function () {
   const wrap = (fn, where) => typeof fn !== 'function' ? fn : function () {
     try { return fn.apply(this, arguments); }
@@ -29,17 +29,17 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  /* ===== 外觀設定：只影響長相，不影響功能 ===== */
+  /* ===== Look & feel: affects appearance only, not behaviour ===== */
   :root {
-    --ink: #0d1424;        /* 頁面背景：深藍墨色 */
-    --panel: #141e33;      /* 卡片 */
-    --raised: #1b2742;     /* 按鈕、輸入框 */
-    --line: #26355a;       /* 邊線 */
+    --ink: #0d1424;        /* Page background: deep ink blue */
+    --panel: #141e33;      /* Cards */
+    --raised: #1b2742;     /* Buttons, inputs */
+    --line: #26355a;       /* Borders */
     --text: #eaf0fa;
     --muted: #8e9bb5;
-    --signal: #5b8cff;     /* 主要按鈕 */
-    --up: #f5c542;         /* 上漲（天堂） */
-    --down: #ff5a5f;       /* 下跌（恐怖） */
+    --signal: #5b8cff;     /* Primary button */
+    --up: #f5c542;         /* Rising (heaven) */
+    --down: #ff5a5f;       /* Falling (horror) */
   }
   * { box-sizing: border-box; }
   body { font-family: 'Manrope', system-ui, sans-serif; background: var(--ink); color: var(--text);
@@ -47,7 +47,7 @@
          font-size: 15px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
   b, .price, .stat b { font-variant-numeric: tabular-nums; }
 
-  /* 頂部：品牌 + 模式切換 */
+  /* Top bar: brand + mode tabs */
   .appbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
   .brand { display: flex; align-items: center; gap: 12px; }
   .brand .name { font-weight: 800; font-size: 20px; letter-spacing: -0.01em; }
@@ -68,7 +68,7 @@
   .tabs button:hover { color: var(--text); background: var(--raised); }
   .tabs button.active { background: var(--signal); color: #fff; }
 
-  /* 圖表卡片：頂部是報價列 */
+  /* Chart card: quote bar on top */
   .chart-wrap { position: relative; width: 100%; min-width: 0; aspect-ratio: 2 / 1; max-height: 70vh; }
   body.mode-survive .chart-wrap { aspect-ratio: 3.6 / 1; max-height: 42vh; }
   .chart-wrap canvas { display: block; position: absolute; inset: 0; width: 100% !important; height: 100% !important; }
@@ -86,7 +86,7 @@
   .meter { width: 120px; height: 6px; background: var(--raised); border-radius: 3px; overflow: hidden; }
   .meter div { height: 100%; width: 0%; background: #3ecf8e; transition: width 0.2s, background 0.2s; }
 
-  /* 按鈕、選單 */
+  /* Buttons, menus */
   button { font-family: inherit; background: var(--signal); color: #fff; border: none; border-radius: 10px;
            padding: 10px 16px; font-size: 15px; font-weight: 600; cursor: pointer; transition: filter 0.15s, transform 0.05s; }
   button:hover { filter: brightness(1.1); }
@@ -100,7 +100,7 @@
   input[type="range"] { accent-color: var(--signal); vertical-align: middle; }
   label { color: var(--muted); font-size: 14px; }
 
-  /* 次要按鈕：低調一點，讓主要按鈕（Play、Start）最顯眼 */
+  /* Secondary buttons: quieter, so the primary ones (Play, Start) stand out */
   #stopBtn, #restartBtn, #liveStopBtn, #outageBtn, #pauseBtn, #statusBtn, #resetBlind, #testNarrator, #replayRoundBtn {
     background: var(--raised) !important; color: var(--text); border: 1px solid var(--line); }
   input[type="file"] { color: var(--muted); font-family: inherit; font-size: 13px; }
@@ -111,7 +111,7 @@
   .card { background: var(--raised); border-radius: 12px; padding: 10px 12px; color: var(--muted); font-size: 13px; }
   .card b { display: block; color: var(--text); font-size: 19px; font-weight: 700; margin-top: 2px; }
 
-  /* 各模式的面板 */
+  /* Panels for each mode */
   .game { background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 18px; margin: 16px 0; }
   .game .answers { display: flex; gap: 10px; margin: 12px 0; flex-wrap: wrap; }
   .game .answers button { font-size: 16px; padding: 12px 18px; }
@@ -128,12 +128,12 @@
            border-radius: 10px; font-size: 20px; font-weight: 800; opacity: 0; transition: opacity 0.6s; pointer-events: none; }
   .spike.show { opacity: 1; transition: none; }
 
-  /* 底部：聽音指南 */
+  /* Bottom: listening guide */
   .legend { margin-top: 20px; padding: 14px 18px; border: 1px dashed var(--line); border-radius: 14px; color: var(--muted); }
   .legend-items { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-top: 8px; font-size: 14px; color: var(--text); }
   .legend-note { font-size: 12px; margin-top: 8px; }
 
-  /* 生存模式：上面一整條走勢圖；左下交易員、右下錢；最下面按鈕 */
+  /* Survive mode: full-width chart on top; trader bottom-left, money bottom-right; buttons at the bottom */
   .survive-stats { grid-template-columns: repeat(4, 1fr); margin-top: 12px; }
   body.mode-survive { max-width: 1440px; }
   body.mode-survive .workspace { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -194,7 +194,7 @@
 
 
 
-  <!-- 即時監控模式（用歷史資料模擬） -->
+  <!-- Live monitor mode (simulated with historical data) -->
   <div id="livePanel" class="game hidden">
     <div style="font-size:14px; color:#9aa0a6; margin-bottom:8px;">
       Simulated live feed: the first 90% of the data is shown as history, then the last 10% arrives one minute at a time,
@@ -235,7 +235,7 @@
       <button id="outageBtn" style="background:#4a5263">🔌 Simulate feed outage</button>
     </div>
     <div id="liveStatus" class="feedback">Not running.</div>
-    <!-- 我的部位：把「市場怎麼了」換算成「我的錢會怎樣」 -->
+    <!-- My position: turn "what the market did" into "what happens to my money" -->
     <div class="exposure">
       <div class="controls" style="margin:0;">
         <b>💼 My position</b>
@@ -252,9 +252,9 @@
   </div>
 
   <div class="workspace">
-  <!-- 生存模式：交易員小遊戲 -->
+  <!-- Survive mode: trader mini-game -->
   <div id="survivePanel" class="game hidden">
-    <!-- 右邊的小欄：交易員 + 數字 -->
+    <!-- Side column: trader + numbers -->
     <div class="survive-side">
       <canvas id="stage" width="480" height="210" style="width:100%; border-radius:12px; display:block;"></canvas>
       <div class="info survive-stats">
@@ -264,7 +264,7 @@
         <div class="card">Shields<b id="shieldText">3 left</b></div>
       </div>
     </div>
-    <!-- 下方：按鈕和設定 -->
+    <!-- Bottom: buttons and settings -->
     <div class="survive-controls">
     <div class="answers">
       <button id="buyBtn" style="background:#b8901c">⬆ Buy (W)</button>
@@ -289,7 +289,7 @@
     </div>
     <div id="surviveMessage" class="feedback">You have $10,000. Each pip the euro moves = $100. Listen to the music: heaven means rising, horror means falling. Press 🛡 (E) to protect a trade: it auto-exits if you lose $500. Don't go broke!</div>
     <div id="narratorText" class="feedback" style="color:#f5c542; margin-top:8px;"></div>
-    <!-- 賽後報告 -->
+    <!-- Post-match report -->
     <div id="reportBox" class="hidden" style="margin-top:16px; background:#0f1115; border:1px solid #2a2e36; border-radius:12px; padding:16px;"></div>
     <details style="margin-top:12px; color:#9aa0a6;">
       <summary>🎙 Narrator settings (optional Gemini / ElevenLabs keys)</summary>
@@ -320,14 +320,14 @@
       </div>
     </div>
     <div class="chart-wrap"><canvas id="chart" height="120"></canvas></div>
-    <!-- 暴衝時閃一下的提示 -->
+    <!-- Flash shown on a spike -->
     <div id="spikeFlash" class="spike" style="pointer-events:none"></div>
     <div id="stormBanner" class="hidden" style="pointer-events:none; position:absolute; left:12px; bottom:12px; padding:6px 12px; border-radius:8px; font-weight:700; font-size:15px;"></div>
-    <!-- 遊戲時蓋住圖表，只能用聽的 -->
+    <!-- Covers the chart during the game, so you can only listen -->
     <div id="cover" class="cover hidden">Listen…<small>Is the market rising, flat or falling?</small></div>
   </div>
 
-  <!-- 遊戲面板 -->
+  <!-- Game panel -->
   </div><!-- /workspace -->
 
   <div id="gamePanel" class="game hidden">
@@ -387,21 +387,21 @@
 
 <script>
 // =====================================================================
-// Market Symphony：把匯率變成配樂
+// Market Symphony: turning the exchange rate into a soundtrack
 //
-//   上漲 → 天堂：明亮的合唱長音 + 往上爬的鈴聲，漲越久調越高、鈴聲越密
-//   平穩 → 平靜：輕輕的和弦和零星的旋律
-//   下跌 → 恐怖：低沉的魔鬼音程 + 顫抖的詭異高音 + 心跳，跌越久越破音、心跳越快
-//   波動大 → 不管漲跌，都加快速度並加上急促的鈸聲
+//   Rising → heaven: bright choir pads + climbing bells; the longer it rises, the higher the key and the denser the bells
+//   Flat → calm: soft chords and a few scattered melody notes
+//   Falling → horror: low devil's-interval drone + trembling eerie highs + heartbeat; the longer it falls, the more distorted and the faster the heartbeat
+//   High volatility → whatever the direction, speed up and add urgent hi-hats
 // =====================================================================
 
-// ---------- 1. 資料 ----------
-// 一份資料 = { t: 時間, c: 收盤價, h: 最高價, l: 最低價 }，每個都是一串數字（陣列）
-// full 是整份資料；prices / ranges / times 是「現在要播放的那一段」
+// ---------- 1. Data ----------
+// A dataset = { t: times, c: close prices, h: highs, l: lows }, each one an array of numbers
+// full is the whole dataset; prices / ranges / times are "the section being played now"
 let full = null;
 let prices = [], ranges = [], times = [];
 
-// 假資料：前段平穩、中段下跌、後段暴跌（沒有真實資料時用）
+// Fake data: calm at first, falling in the middle, crashing at the end (used when there is no real data)
 function makeFakeData() {
   const d = { t: [], c: [], h: [], l: [] };
   let price = 1.30;
@@ -419,8 +419,8 @@ function makeFakeData() {
   return d;
 }
 
-// 讀 CSV。如果有 SGX FX 格式的欄位（close_mid 等）就用它們；
-// 否則每一行抓「最後一個是數字的欄位」當價格。
+// Read a CSV. If it has SGX FX-style columns (close_mid etc.) use them;
+// otherwise take "the last numeric column" on each row as the price.
 function parseCsv(text) {
   const lines = text.trim().split(/\r?\n/);
   const header = lines[0].split(',');
@@ -447,16 +447,16 @@ function parseCsv(text) {
   return d;
 }
 
-// 從整份資料裡選出要播放的那一段
-//  "storm"：找出一分鐘內振幅最大的時刻，取它前 90 分鐘、後 60 分鐘（約 2.5 分鐘的音樂）
-//  "day"：整天壓縮成約 240 步（每一步合併好幾分鐘）
+// Pick the section of the whole dataset to play
+//  "storm": find the minute with the biggest range, take 90 minutes before and 60 after (about 2.5 minutes of music)
+//  "day": squeeze the whole day into about 240 steps (each step merges several minutes)
 function selectView() {
   const view = document.getElementById('viewSelect').value;
   const n = full.c.length;
   prices = []; ranges = []; times = [];
 
   if (view.startsWith('storm')) {
-    // 找出當天前三大的風暴（彼此至少相隔 150 分鐘，避免三段其實是同一場風暴）
+    // Find the day's three biggest storms (at least 150 minutes apart, so the three sections aren't really the same storm)
     const order = full.c.map((_, i) => i).sort((a, b) => (full.h[b] - full.l[b]) - (full.h[a] - full.l[a]));
     const peaks = [];
     for (const i of order) {
@@ -470,7 +470,7 @@ function selectView() {
       prices.push(full.c[i]); ranges.push(full.h[i] - full.l[i]); times.push(full.t[i]);
     }
   } else {
-    const size = Math.max(1, Math.ceil(n / 240));    // 每一步合併幾分鐘
+    const size = Math.max(1, Math.ceil(n / 240));    // How many minutes to merge into each step
     for (let i = 0; i < n; i += size) {
       const end = Math.min(n, i + size);
       const hi = Math.max(...full.h.slice(i, end)), lo = Math.min(...full.l.slice(i, end));
@@ -479,7 +479,7 @@ function selectView() {
   }
 }
 
-// 換一份資料：選出要播的那一段 → 分析 → 畫圖
+// Switch dataset: pick the section to play → analyse → draw
 function loadData(d) {
   stop();
   full = d;
@@ -489,46 +489,46 @@ function loadData(d) {
   drawChart();
 }
 
-// ---------- 2. 事先算好每個時間點的「市場狀態」 ----------
-// mood：這個時間點的情緒
-//   'heaven' = 持續上漲         → 天堂般的音樂
-//   'horror' = 持續下跌         → 恐怖片般的音樂
-//   'calm'   = 在一個區間裡晃   → 平靜的音樂
-// intensity：情緒有多強烈（0～1）。漲/跌得越多、而且持續越久，數字越大，音效就越深。
-// storm：最近幾筆的「振幅」（最高價 - 最低價）有多大（0～1），用來加鼓和加快速度。
+// ---------- 2. Work out the "market state" at every point in advance ----------
+// mood: the mood at this point
+//   'heaven' = rising steadily       → heavenly music
+//   'horror' = falling steadily      → horror-film music
+//   'calm'   = wobbling in a range   → calm music
+// intensity: how strong the mood is (0–1). The more it rises/falls, and the longer it lasts, the bigger the number and the deeper the sound.
+// storm: how big the recent "range" (high - low) is (0–1); used to add drums and speed up.
 let moods = [], intensity = [], storm = [];
-let causalMode = false;   // true = 即時模式：只能用過去的資料判斷
-let causalLines = false;  // 圖表是不是用「只看過去」的結果上色（即時模式）
-// spikes：一分鐘內突然暴漲或暴跌的時刻。0 = 沒有；正數 = 暴漲；負數 = 暴跌（數字 = 漲跌了幾 pip）
+let causalMode = false;   // true = live mode: may only use past data to decide
+let causalLines = false;  // Is the chart coloured with the "past-only" result (live mode)
+// spikes: moments of a sudden jump or crash within one minute. 0 = none; positive = jump; negative = crash (the number = pips moved)
 let spikes = [];
-// 風暴預警（只看過去，不偷看未來）：
-//   stormRatio = 最近 10 分鐘的振幅是「平常」的幾倍
-//   warnLevel  = 0 正常、1 🟡 風暴醞釀中（2 倍以上）、2 🔴 風暴來了（3.5 倍以上）
-// 為什麼這個預測可信：我們用 SGX FX 的資料測過，「過去 10 分鐘的波動」和「接下來 10 分鐘的波動」
-// 相關係數高達 0.78～0.90（波動群聚）。但「漲或跌」的方向準確率只有 46～51%，跟丟銅板差不多，所以我們不預測方向。
+// Storm warning (past only, never peeks at the future):
+//   stormRatio = how many times "normal" the range of the last 10 minutes is
+//   warnLevel  = 0 normal, 1 🟡 storm brewing (2× or more), 2 🔴 storm (3.5× or more)
+// Why this forecast is trustworthy: we tested it on SGX FX data — "volatility over the past 10 minutes" and "volatility over the next 10 minutes"
+// have a correlation of 0.78–0.90 (volatility clustering). But the up/down direction is only right 46–51% of the time, about a coin flip, so we don't predict direction.
 let stormRatio = [], warnLevel = [];
 
 function analyse() {
-  // --- 情緒：看「最近 12 步」是不是一路往同一個方向走 ---
-  // 「方向一致度」= 淨漲跌 ÷ 這段路上所有上下跳動加起來的總距離
-  //   一路穩穩往下走 → 接近 -1；一路往上 → 接近 +1；上上下下原地打轉 → 接近 0
-  // 這樣「慢慢但持續地下跌」也能很快被抓到，不會被當成平穩。
-  const W = 8;          // 看前後各 4 步（原本 6 步），比較短的急漲急跌也抓得到
+  // --- Mood: check whether the "last 12 steps" keep heading the same way ---
+  // "Direction consistency" = net change ÷ total distance of every up and down move along the way
+  //   Steadily down → close to -1; steadily up → close to +1; going up and down on the spot → close to 0
+  // This way a "slow but steady fall" is caught quickly instead of being treated as calm.
+  const W = 8;          // Look 4 steps either side (was 6) so shorter sharp rises/falls are caught too
   const netMoves = prices.map((p, i) => Math.abs(p - prices[Math.max(0, i - W)])).sort((a, b) => a - b);
-  const BAND = netMoves[Math.floor(netMoves.length / 2)] || 1e-9;  // 12 步之間「一般」會走多遠
-  const ENTER = 0.3;    // 一致度超過這個值，才算開始漲/跌
-  const LEAVE = 0.15;   // 漲/跌中，一致度掉到這個值以下，才算結束（兩個門檻不同，避免一直來回切換）
-  // 新的情緒要連續出現幾步才切換（大暴衝例外，立刻切換）
-  // 即時模式每一步要等好幾秒，不能再多等，所以只要 1 步就切換
+  const BAND = netMoves[Math.floor(netMoves.length / 2)] || 1e-9;  // How far it "normally" moves in 12 steps
+  const ENTER = 0.3;    // Consistency must exceed this to count as starting to rise/fall
+  const LEAVE = 0.15;   // While rising/falling, it only ends when consistency drops below this (two different thresholds stop it flipping back and forth)
+  // How many steps in a row a new mood must appear before switching (big spikes are the exception and switch at once)
+  // In live mode each step takes several seconds, so we can't wait any longer: switch after just 1 step
   const CONFIRM = causalMode ? 1 : 3;
 
   moods = []; intensity = [];
   let state = 'calm', pending = 0, startIndex = 0;
 
   prices.forEach((p, i) => {
-    // 視窗「以現在為中心」：往前看 6 步、往後看 6 步。
-    // 因為播的是歷史資料，未來幾步其實已經知道了，這樣音樂就能在趨勢「剛開始」時就切換，不會慢半拍。
-    // 即時模式（causalMode）看不到未來，只能用過去 12 步判斷，所以音樂會慢一點才切換
+    // The window is "centred on now": 6 steps back and 6 steps ahead.
+    // Because this is historical data, the next few steps are already known, so the music can switch right as a trend "starts" instead of lagging.
+    // Live mode (causalMode) can't see the future and only uses the past 12 steps, so the music switches a bit later
     const from = causalMode ? Math.max(0, i - W) : Math.max(0, i - W / 2);
     const to = causalMode ? i : Math.min(prices.length - 1, i + W / 2);
     const net = prices[to] - prices[from];
@@ -536,14 +536,14 @@ function analyse() {
     for (let k = from + 1; k <= to; k++) path += Math.abs(prices[k] - prices[k - 1]);
     const consistency = path ? net / path : 0;
 
-    // 這一步「想要」變成什麼情緒
+    // What mood this step "wants" to become
     let want = 'calm';
     if (consistency > ENTER && net > 0.4 * BAND) want = 'heaven';
     else if (consistency < -ENTER && -net > 0.4 * BAND) want = 'horror';
-    else if (state === 'heaven' && consistency > LEAVE) want = 'heaven';   // 還在漲，維持
-    else if (state === 'horror' && consistency < -LEAVE) want = 'horror';  // 還在跌，維持
+    else if (state === 'heaven' && consistency > LEAVE) want = 'heaven';   // Still rising, keep it
+    else if (state === 'horror' && consistency < -LEAVE) want = 'horror';  // Still falling, keep it
 
-    // 要連續好幾步都想換，才真的換；如果是很大的暴衝（超過一般的 2 倍），立刻換
+    // Only switch after several steps in a row want to; for a very big spike (over 2× normal), switch at once
     if (want !== state) {
       pending++;
       if (pending >= CONFIRM || Math.abs(net) > 2 * BAND) {
@@ -554,18 +554,18 @@ function analyse() {
     moods.push(state);
     if (state === 'calm') intensity.push(0);
     else {
-      const distance = Math.min(1, Math.abs(net) / (3 * BAND));      // 漲/跌了多少
-      const duration = Math.min(1, (i - startIndex) / 40);            // 持續多久
+      const distance = Math.min(1, Math.abs(net) / (3 * BAND));      // How much it rose/fell
+      const duration = Math.min(1, (i - startIndex) / 40);            // How long it has lasted
       intensity.push(0.6 * distance + 0.4 * duration);
     }
   });
-  // 「連續 3 步才切換」會讓切換晚 3 步，這裡把結果整體往前挪 3 步抵消掉
+  // "Switch after 3 steps in a row" makes switching 3 steps late, so shift the whole result 3 steps earlier to cancel it out
   if (!causalMode) {
     moods = moods.slice(CONFIRM).concat(Array(CONFIRM).fill(moods[moods.length - 1]));
     intensity = intensity.slice(CONFIRM).concat(Array(CONFIRM).fill(intensity[intensity.length - 1]));
   }
 
-  // --- 風暴：振幅。有最高/最低價就用它，否則用前後兩筆的價差 ---
+  // --- Storm: range. Use high/low if available, otherwise the difference between neighbouring prices ---
   const changes = prices.map((p, i) =>
     Math.max(ranges[i] || 0, i === 0 ? 0 : Math.abs(p - prices[i - 1])));
   const raw = changes.map((_, i) => {
@@ -573,7 +573,7 @@ function analyse() {
     return recent.reduce((a, b) => a + b, 0) / recent.length;
   });
   const top = Math.max(...raw) || 1;
-  // 以「中位數」當作平靜，最劇烈的時候當作 1；開 0.6 次方讓中等波動也聽得出來
+  // Treat the median as calm and the most violent moment as 1; raise to the power 0.6 so medium volatility is audible too
   const median = [...raw].sort((a, b) => a - b)[Math.floor(raw.length / 2)];
   storm = raw.map(v => Math.pow(Math.max(0, (v - median) / (top - median || 1)), 0.6));
 
@@ -582,19 +582,19 @@ function analyse() {
   fixSharpReversals();
 }
 
-// 修正「趨勢中的急轉彎」：
-// 情緒是看一小段時間的整體方向，所以上漲趨勢中突然急跌一下，還是會被算成「上漲」（黃色）。
-// 這裡把「跟目前情緒方向相反、而且幅度明顯（累積超過一般一步的 1.2 倍）」的連續幾步，在圖上改成實際的方向。
-// 背景音樂（moods）不跟著切換，不然音樂會一直跳來跳去；改成在那一刻播一個短短的「急轉」音效。
-let lineMoods = [];      // 圖表上色用（包含急轉彎）
-let reversal = [];       // 這一步是不是急轉彎的開始：'up' / 'down' / null
+// Fix "sharp reversals inside a trend":
+// The mood looks at the overall direction over a short stretch, so a sudden dip inside an uptrend is still counted as "rising" (yellow).
+// Here, consecutive steps that go against the current mood by a clear amount (more than 1.2× a normal step in total) are recoloured on the chart with their real direction.
+// The background music (moods) doesn't switch with them, or it would keep jumping around; instead a short "reversal" sound plays at that moment.
+let lineMoods = [];      // Used for chart colours (includes sharp reversals)
+let reversal = [];       // Is this step the start of a sharp reversal: 'up' / 'down' / null
 function fixSharpReversals() {
   lineMoods = moods.slice();
   reversal = prices.map(() => null);
   const steps = prices.map((p, i) => (i === 0 ? 0 : Math.abs(p - prices[i - 1]))).sort((a, b) => a - b);
   const normal = steps[Math.floor(steps.length / 2)] || 1e-9;
-  // 回放：第 i 步的顏色畫的是 i → i+1 這段線，所以看「下一步」怎麼走
-  // 即時（看不到未來）：只能看 i-1 → i 這一步
+  // Replay: the colour of step i is the line i → i+1, so look at how the "next step" moves
+  // Live (can't see the future): can only look at the step i-1 → i
   const move = i => causalMode ? (i > 0 ? prices[i] - prices[i - 1] : 0)
                                : (i < prices.length - 1 ? prices[i + 1] - prices[i] : 0);
   const against = i => (moods[i] === 'heaven' && move(i) < 0) || (moods[i] === 'horror' && move(i) > 0);
@@ -602,12 +602,12 @@ function fixSharpReversals() {
   let i = 0;
   while (i < prices.length) {
     if (!against(i)) { i++; continue; }
-    // 找出一整段連續的「反方向」
+    // Find a whole run of consecutive "opposite direction" steps
     const start = i, mood = moods[i];
     let total = 0;
     while (i < prices.length && moods[i] === mood && against(i)) { total += Math.abs(move(i)); i++; }
-    // 顏色：反方向走超過一般一步的 1.2 倍就改顏色（圖上看得出來的都要對）
-    // 音效：要超過 2 倍才「嘟嘟」，不然會太吵
+    // Colour: change the colour once the opposite move exceeds 1.2× a normal step (anything visible on the chart must be right)
+    // Sound: only "beep-beep" above 2×, otherwise it gets too noisy
     if (total > 1.2 * normal) {
       const actual = mood === 'heaven' ? 'horror' : 'heaven';
       for (let k = start; k < i; k++) lineMoods[k] = actual;
@@ -629,7 +629,7 @@ function computeWarnings() {
   warnLevel = [];
   let level = 0;
   stormRatio.forEach(r => {
-    // 進入和離開用不同門檻，避免警報一直閃
+    // Different thresholds for entering and leaving, so the warning doesn't keep flashing
     if (r >= 3.5) level = 2;
     else if (r >= 2) level = level === 2 && r > 2.5 ? 2 : 1;
     else if (r < 1.5) level = 0;
@@ -638,7 +638,7 @@ function computeWarnings() {
   });
 }
 
-// --- 暴衝：這一步的變化超過「這段資料一般一步變化」的 5 倍 ---
+// --- Spike: this step's change is more than 5× a normal step for this data ---
 function computeSpikes() {
   const steps = prices.map((p, i) => (i === 0 ? 0 : p - prices[i - 1]));
   const sortedSteps = steps.map(Math.abs).sort((a, b) => a - b);
@@ -647,20 +647,20 @@ function computeSpikes() {
   spikeScale = normalStep * 10000;
 }
 
-// ---------- 3. 畫圖 ----------
+// ---------- 3. Chart ----------
 const MOOD_COLORS = { heaven: '#f5c542', horror: '#ff4d4f', calm: '#8a93a6' };
-// 劇烈跳動時，用「這一段實際往哪走」來決定顏色：
-const JUMP_UP_COLOR = '#52c41a';     // 綠色：劇烈跳動中的急漲
-const JUMP_DOWN_COLOR = '#eb2f96';   // 粉紅色：劇烈跳動中的急跌
+// During violent swings, colour by "where this segment actually went":
+const JUMP_UP_COLOR = '#52c41a';     // Green: a sharp rise during violent swings
+const JUMP_DOWN_COLOR = '#eb2f96';   // Pink: a sharp fall during violent swings
 
-// 每一段線要用什麼顏色
-// k = 這段線的起點（畫的是 k → k+1）
-// 即時模式只知道過去，所以用「這段線走完之後」（k+1）的判斷來上色，才不會慢一步
-// 「現在的情緒」：即時模式用包含急轉彎的版本（每一步要等好幾秒，不怕音樂跳來跳去），
-// 回放和遊戲用平滑的版本（一秒好幾步，不平滑的話音樂會一直亂切）
-// ===== 即時模式的判斷：只看「剛剛實際走了多少」，簡單、直接、不延遲 =====
-//   這一分鐘走得很大 → 就用這一分鐘的方向
-//   否則看最近 3 分鐘的淨漲跌：超過一般幅度的 0.6 倍就是漲（黃）或跌（紅），太小才是平穩（灰）
+// Which colour each line segment should be
+// k = start of this segment (drawn from k → k+1)
+// Live mode only knows the past, so colour using the judgement "after this segment finished" (k+1), so it isn't a step late
+// "Current mood": live mode uses the version including sharp reversals (each step takes seconds, so jumpy music is fine),
+// replay and the games use the smoothed version (several steps per second; without smoothing the music would keep flipping)
+// ===== Live-mode judgement: only look at "how far it actually just moved" — simple, direct, no delay =====
+//   This minute moved a lot → use this minute's direction
+//   Otherwise look at the net change over the last 3 minutes: above 0.6× the normal move it's rising (yellow) or falling (red); only when it's too small is it calm (grey)
 let recentScale = 1e-9, stepScale = 1e-9;
 function computeRecentScales() {
   const three = [], one = [];
@@ -680,21 +680,21 @@ function recentMood(i) {
 }
 const isJumpy = i => !!spikes[i] || (storm[i] || 0) > 0.35;
 
-// 「走到第 i 點時」的情緒 —— 永遠和畫面上最新那一段線的顏色一致，音樂、提示、角色都用它
-//   金色／綠色 = 上升（天堂）、紅色／粉紅 = 下降（恐怖）、灰色 = 平穩
+// The mood "on reaching point i" — always matches the colour of the newest line segment on screen; the music, hints and character all use it
+//   Gold / green = rising (heaven), red / pink = falling (horror), grey = calm
 function moodAt(i) {
   if (typeof liveActive !== 'undefined' && liveActive) return recentMood(i);
   if (i <= 0) return moods[0] || 'calm';
-  const k = Math.min(i, prices.length - 1) - 1;          // 最新那一段線：k → k+1
+  const k = Math.min(i, prices.length - 1) - 1;          // The newest line segment: k → k+1
   const m = lineMoods[k] || moods[k];
   if (m === 'calm' && (spikes[k] || spikes[k + 1] || (storm[k] || 0) > 0.35))
-    return prices[k + 1] >= prices[k] ? 'heaven' : 'horror';   // 綠色／粉紅那種「跳很大」的段
+    return prices[k + 1] >= prices[k] ? 'heaven' : 'horror';   // A green / pink "big jump" segment
   return m || 'calm';
 }
 
 function lineColor(k) {
   if (causalLines) {
-    // 即時模式：這段線（k → k+1）用「走到 k+1 時」剛剛實際的走勢上色
+    // Live mode: this segment (k → k+1) is coloured by what actually happened "on reaching k+1"
     const i = Math.min(k + 1, prices.length - 1);
     const m = recentMood(i);
     if (m !== 'calm' && isJumpy(i)) return m === 'heaven' ? JUMP_UP_COLOR : JUMP_DOWN_COLOR;
@@ -707,7 +707,7 @@ function lineColor(k) {
   }
   return MOOD_COLORS[mood] || '#8a93a6';
 }
-// 滑鼠在圖表上時，畫一條直的虛線（十字線），比較容易看出指到哪一個時間點
+// While the mouse is over the chart, draw a vertical dashed line (crosshair) so it's easier to see which time you're pointing at
 const crosshair = {
   id: 'crosshair',
   afterDatasetsDraw(c) {
@@ -725,20 +725,20 @@ const chart = new Chart(document.getElementById('chart'), {
   plugins: [crosshair],
   type: 'line',
   data: { labels: [], datasets: [
-    // 價格線：每一段依照情緒上色（天堂 = 金色、恐怖 = 紅色、平穩 = 灰藍色）
+    // Price line: each segment is coloured by mood (heaven = gold, horror = red, calm = grey-blue)
     { data: [], borderColor: '#8a93a6', pointRadius: 0, borderWidth: 2.5,
       pointHoverRadius: 7, pointHoverBackgroundColor: '#ffffff', pointHoverBorderColor: '#5b8cff', pointHoverBorderWidth: 3,
       segment: { borderColor: ctx => lineColor(ctx.p0DataIndex) } },
     { data: [], borderColor: '#ff7a45', backgroundColor: '#ff7a45', pointRadius: 6, showLine: false }
   ]},
-  // 圖表的高度由外框的 CSS（aspect-ratio）決定，不用 Chart.js 自己算的比例：
-  // Chart.js 自己算比例時，視窗從小變大後會卡在舊的大小（它會被舊的高度限制住）
-  // 滑鼠只要在圖表上「左右移動」就會顯示最近那一點的時間和價格（不用剛好指到線上）
+  // The chart's height comes from the container's CSS (aspect-ratio), not Chart.js's own ratio:
+  // when Chart.js computes the ratio itself, the chart gets stuck at the old size after the window grows (the old height limits it)
+  // Just moving the mouse "left and right" over the chart shows the time and price of the nearest point (no need to hit the line exactly)
   options: { animation: false, responsive: true, maintainAspectRatio: false,
     interaction: { mode: 'index', axis: 'x', intersect: false },
     plugins: { legend: { display: false },
       tooltip: {
-        filter: item => item.datasetIndex === 0 && item.parsed.y != null && !hideAnswer,   // 猜漲跌遊戲中不顯示，免得洩漏答案
+        filter: item => item.datasetIndex === 0 && item.parsed.y != null && !hideAnswer,   // Hidden during the guessing game, so it doesn't give away the answer
         displayColors: false, backgroundColor: 'rgba(11,18,32,0.95)', borderColor: '#5b8cff', borderWidth: 1.5,
         padding: 12, cornerRadius: 10, caretSize: 7,
         titleFont: { family: 'Manrope', size: 14, weight: '600' }, titleColor: '#9aa6bf',
@@ -751,8 +751,8 @@ const chart = new Chart(document.getElementById('chart'), {
     scales: { x: { display: false }, y: { ticks: { color: '#8e9bb5', font: { family: 'Manrope' } }, grid: { color: '#1f2b47' } } } }
 });
 
-// 滑鼠指著圖表時，圖表每走一步都會重畫，重畫會把提示框清掉 → 看起來「有時候有、有時候沒有」。
-// 解法：記住滑鼠位置，每次重畫後自動把提示框放回去。
+// While the mouse is on the chart, the chart redraws every step, and redrawing clears the tooltip → it looks like "sometimes there, sometimes not".
+// Fix: remember the mouse position and put the tooltip back after every redraw.
 let chartMouse = null;
 const chartCanvas = document.getElementById('chart');
 chartCanvas.addEventListener('mousemove', e => {
@@ -769,15 +769,15 @@ function restoreTooltip() {
     chart.setActiveElements(els);
     chart.tooltip.setActiveElements(els, chartMouse);
     chart.draw();
-  } catch (e) { /* 提示框只是輔助，出錯就略過 */ }
+  } catch (e) { /* The tooltip is only a helper; skip it on error */ }
 }
 if (chart.update) {
   const originalUpdate = chart.update.bind(chart);
   chart.update = (...args) => { const r = originalUpdate(...args); restoreTooltip(); return r; };
 }
 
-// 圖表的上下範圍至少要有 10 pip（0.0010）。
-// 不然市場很平靜時，圖表會自動放大，0.0002 的小晃動看起來像大起大落。
+// The chart's vertical range is at least 10 pips (0.0010).
+// Otherwise, when the market is calm, the chart zooms in and a 0.0002 wobble looks like a huge swing.
 const MIN_SPAN = 0.0010;
 function fitYAxis(values) {
   const valid = values.filter(v => v != null);
@@ -791,7 +791,7 @@ function fitYAxis(values) {
 
 function drawChart() {
   fitYAxis(prices);
-  // 恢復成「整段資料」的上色方式（即時模式會把它改成只畫最近 90 分鐘）
+  // Restore the "whole dataset" colouring (live mode changes it to only draw the last 90 minutes)
   chart.data.datasets[0].segment = { borderColor: ctx => lineColor(ctx.p0DataIndex) };
   chart.data.labels = times;
   chart.data.datasets[0].data = prices;
@@ -799,13 +799,13 @@ function drawChart() {
   chart.update();
 }
 
-// ---------- 4. 樂器 ----------
-// 殘響：讓聲音像在大教堂或空曠的地方，天堂和恐怖都需要它
-// 音樂總線：所有「背景音樂」都經過這裡，方便整體調大調小（警報和音效不經過這裡，所以不會被關掉）
+// ---------- 4. Instruments ----------
+// Reverb: makes it sound like a cathedral or an open space; both heaven and horror need it
+// Music bus: all "background music" goes through here so it can be turned up or down together (alerts and sound effects bypass it, so they're never muted)
 const musicBus = new Tone.Gain(1).toDestination();
 const reverb = new Tone.Reverb({ decay: 5, wet: 0.45 }).connect(musicBus);
 
-// 天堂：柔和的長音和弦（像合唱）+ 高音的鈴聲
+// Heaven: soft sustained chords (like a choir) + high bells
 const pad = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'sine' },
   envelope: { attack: 0.6, decay: 0.3, sustain: 0.8, release: 2 } }).connect(reverb);
 pad.volume.value = -14;
@@ -813,17 +813,17 @@ const bell = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'triangle' },
   envelope: { attack: 0.005, decay: 0.6, sustain: 0, release: 1.2 } }).connect(reverb);
 bell.volume.value = -16;
 
-// 平靜：輕輕的單音旋律
+// Calm: a soft single-note melody
 const soft = new Tone.Synth({ oscillator: { type: 'triangle' },
   envelope: { attack: 0.02, decay: 0.8, sustain: 0, release: 1 } }).connect(reverb);
 soft.volume.value = -14;
 
-// 恐怖：低沉的嗡嗡聲（越恐怖越破音）+ 會顫抖的詭異高音 + 心跳
+// Horror: a low drone (more distorted the scarier it gets) + trembling eerie highs + heartbeat
 const horrorDistortion = new Tone.Distortion(0.5).connect(reverb);
 horrorDistortion.wet.value = 0;
 const droneFilter = new Tone.Filter(500, 'lowpass').connect(horrorDistortion);
-// 同時可以響的音數要夠多：和弦換得快的時候，舊和弦還在淡出，新和弦又進來，
-// 上限太低的話新的音會被丟掉，聽起來就像音樂突然不見了
+// Allow enough simultaneous voices: when chords change quickly, the old chord is still fading out as the new one comes in;
+// with too low a limit, new notes get dropped and it sounds like the music suddenly disappeared
 pad.maxPolyphony = 48;
 bell.maxPolyphony = 32;
 const drone = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'sawtooth' },
@@ -837,29 +837,29 @@ eerie.volume.value = -18;
 const heart = new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 4 }).connect(musicBus);
 heart.volume.value = -4;
 
-// 波動大的時候加進來的鈸
+// Hi-hats added when volatility is high
 const hat = new Tone.NoiseSynth({ envelope: { attack: 0.001, decay: 0.03, sustain: 0 } }).connect(musicBus);
 hat.volume.value = -28;
 
-// ---------- 5. 樂理 ----------
+// ---------- 5. Music theory ----------
 const MAJOR = [0, 2, 4, 5, 7, 9, 11];
-const HEAVEN_PROGRESSION = [0, 3, 5, 4];   // I – IV – vi – V：溫暖、往上走的感覺
-const CALM_PROGRESSION = [0, 5, 3, 4];     // I – vi – IV – V：最常見、最安心的進行
-const PENTATONIC = [0, 2, 4, 7, 9];        // 平靜旋律用的五聲音階
+const HEAVEN_PROGRESSION = [0, 3, 5, 4];   // I – IV – vi – V: warm, upward feeling
+const CALM_PROGRESSION = [0, 5, 3, 4];     // I – vi – IV – V: the most common, most reassuring progression
+const PENTATONIC = [0, 2, 4, 7, 9];        // Pentatonic scale for the calm melody
 
-// 用大調音階做出一個三和弦（三個 MIDI 音高，60 = 中央 C）
+// Build a triad from the major scale (three MIDI pitches, 60 = middle C)
 function chordAt(root, base) {
   return [0, 2, 4].map(offset => {
     const degree = root + offset;
     return base + MAJOR[degree % 7] + 12 * Math.floor(degree / 7);
   });
 }
-const midi = n => Tone.Frequency(n, 'midi').toNote();   // MIDI 編號 → 音名，例如 64 → "E4"
+const midi = n => Tone.Frequency(n, 'midi').toNote();   // MIDI number → note name, e.g. 64 → "E4"
 
-// ---------- 5.5 暴衝音效 ----------
-// 暴漲：「咻～」往上衝 + 「叮！」
-// 暴跌：炸彈掉下來的「咻～～」往下 + 「轟！」
-// 特別大的暴衝（超過一般的 25 倍）：再加一聲打雷
+// ---------- 5.5 Spike sounds ----------
+// Jump: a "whoosh" shooting upward + a "ding!"
+// Crash: a falling-bomb "whoosh" going down + a "boom!"
+// Extra-big spikes (over 25× normal): add a thunderclap
 let lastSpikeStep = -1;
 let lastReversalStep = -1;
 const blip = new Tone.Synth({ oscillator: { type: 'square' },
@@ -894,7 +894,7 @@ function playSpike(pips, time) {
   if (mega) thunder.triggerAttackRelease('1n', time + 0.3);
 }
 
-// 風暴預警的提示音：「叮咚、叮咚」（不刺耳，但聽得出來是警告）
+// Storm-warning chime: "ding-dong, ding-dong" (not harsh, but clearly a warning)
 const alarm = new Tone.Synth({ oscillator: { type: 'triangle' },
   envelope: { attack: 0.01, decay: 0.25, sustain: 0.2, release: 0.3 } }).toDestination();
 alarm.volume.value = -10;
@@ -907,12 +907,12 @@ function playAlarmInner(level) {
   notes.forEach((note, k) => alarm.triggerAttackRelease(note, '16n', now + k * 0.22));
 }
 
-// 在圖表上閃一下「⚡ +3.9 pips in one step」
+// Flash "⚡ +3.9 pips in one step" on the chart
 function showSpike(pips) {
   try { showSpikeInner(pips); } catch (e) { console.warn('Spike flash skipped:', e.message); }
 }
 function showSpikeInner(pips) {
-  if (hideAnswer) return;   // 猜漲跌遊戲中不顯示，只聽聲音
+  if (hideAnswer) return;   // Hidden during the guessing game; sound only
   const flash = document.getElementById('spikeFlash');
   const up = pips > 0;
   const mega = Math.abs(pips) > 25 * spikeScale;
@@ -923,14 +923,14 @@ function showSpikeInner(pips) {
   setTimeout(() => flash.classList.remove('show'), 700);
 }
 
-// ---------- 6. 播放：每個 16 分音符執行一次（一小節 = 16 次） ----------
-let step = 0;          // 播到第幾筆資料
-let tick = 0;          // 這一小節的第幾個 16 分音符（0～15）
-let bar = 0;           // 第幾小節
-let mood = 'calm', power = 0, wind = 0;   // 這一小節的情緒、強度、風暴程度
-let chord = [60, 64, 67];                 // 這一小節的和弦
+// ---------- 6. Playback: runs once per 16th note (16 times per bar) ----------
+let step = 0;          // Which data point we're on
+let tick = 0;          // Which 16th note of the bar (0–15)
+let bar = 0;           // Which bar
+let mood = 'calm', power = 0, wind = 0;   // This bar's mood, intensity and storm level
+let chord = [60, 64, 67];                 // This bar's chord
 
-// 保護音樂引擎：就算某一次出錯，也只跳過那一拍，不會讓整首音樂停掉
+// Protect the music engine: if one beat errors, skip just that beat instead of stopping all the music
 let lastTickAt = 0;
 function onTick(time) {
   lastTickAt = performance.now();
@@ -939,12 +939,12 @@ function onTick(time) {
 }
 
 function onTickInner(time) {
-  if (step >= prices.length) return;     // 播完了（結束由下面的「前進計時器」處理）
+  if (step >= prices.length) return;     // Finished playing (the end is handled by the "step timer" below)
 
-  // ===== 決定情緒，並彈出長音 =====
-  // 每一小節的開頭會重新彈一次；如果情緒在小節中間變了，就在下一拍（最多等 3 步）立刻切換，
-  // 這樣音樂不會慢半拍，但也不會在拍子中間亂切
-  // 音樂跟著「畫面上最新那一段線」的顏色走（非即時模式時 step 是下一個要畫的點）
+  // ===== Decide the mood and play the sustained notes =====
+  // Replayed at the start of every bar; if the mood changes mid-bar, switch on the next beat (waiting at most 3 steps),
+  // so the music isn't late but doesn't cut in mid-beat either
+  // The music follows the colour of "the newest line segment on screen" (outside live mode, step is the next point to draw)
   const live = typeof liveActive !== 'undefined' && liveActive;
   const cur = live ? step : Math.max(0, Math.min(step - 1, prices.length - 1));
   const moodChanged = moodAt(cur) !== mood;
@@ -953,25 +953,25 @@ function onTickInner(time) {
     mood = moodAt(cur); power = Math.max(intensity[cur], mood !== moods[cur] ? 0.6 : 0); wind = storm[cur];
     if (tick === 0) bar++;
 
-    // 每個聲音只代表一件事，聽的人才不會混淆：
-    //   音樂風格 = 方向；速度 = 波動有多大；音高、心跳快慢、樂器多寡 = 趨勢有多強
-    const baseBpm = mood === 'heaven' ? 90 : mood === 'horror' ? 72 : 76;   // 每種風格自己的基本速度
-    // 漲跌越陡（power）、波動越大（wind）→ 速度越快；差距拉大，耳朵一聽就分得出來
+    // Each sound means only one thing, so listeners don't get confused:
+    //   music style = direction; speed = how volatile; pitch, heartbeat rate and number of instruments = how strong the trend is
+    const baseBpm = mood === 'heaven' ? 90 : mood === 'horror' ? 72 : 76;   // Each style's own base tempo
+    // Steeper moves (power) and bigger volatility (wind) → faster tempo; wider contrast so the ear can tell straight away
     setTempo(baseBpm + power * 55 + wind * 40);
     const gentle = document.getElementById('gentleMode').checked;
     horrorDistortion.wet.rampTo(mood === 'horror' && !gentle ? power * 0.8 : 0, 1);
 
     if (mood === 'heaven') {
-      // 越強烈，整首歌的調就越往上升（最多升 5 個半音），像一路飛上天
-      // 漲得越陡，整首歌的調就越往上升（最多升 12 個半音 = 一個八度），像一路飛上天
+      // The stronger it is, the higher the whole song's key (up to 5 semitones), like flying up to the sky
+      // The steeper the rise, the higher the whole song's key (up to 12 semitones = one octave), like flying up to the sky
       chord = chordAt(HEAVEN_PROGRESSION[bar % 4], 60 + Math.round(power * 12));
       pad.triggerAttackRelease(chord.map(midi), '1m', time, 0.5 + 0.5 * power);
     } else if (mood === 'horror') {
-      // 低音 C + F#：「增四度」，又叫「魔鬼音程」，聽起來很不安
-      // 跌得越陡，低音越往下沉（最多降 7 個半音）
+      // Low C + F#: an "augmented fourth", also called the "devil's interval" — it sounds uneasy
+      // The steeper the fall, the lower the bass sinks (down by up to 7 semitones)
       const sink = Math.round(power * 7);
       const notes = [36 - sink, 42 - sink];
-      if (power > 0.5 && !document.getElementById('gentleMode').checked) notes.push(37 - sink);    // 再加一個只差半音的音，更刺耳（溫和模式不加）
+      if (power > 0.5 && !document.getElementById('gentleMode').checked) notes.push(37 - sink);    // Add a note just a semitone apart for extra harshness (not in gentle mode)
       drone.triggerAttackRelease(notes.map(midi), '1m', time, 0.6 + 0.4 * power);
     } else {
       chord = chordAt(CALM_PROGRESSION[bar % 4], 55);
@@ -979,39 +979,39 @@ function onTickInner(time) {
     }
   }
 
-  // ===== 每個 16 分音符 =====
+  // ===== Every 16th note =====
   if (mood === 'heaven') {
-    // 往上爬的鈴聲琶音；越強烈越密、越高
-    // 節奏分三段：慢慢漲 = 4 拍一個音；漲得快 = 2 拍一個；急漲 = 每拍都響
+    // Climbing bell arpeggio; the stronger it is, the denser and higher
+    // Three rhythm levels: slow rise = one note every 4 beats; faster rise = every 2; sharp rise = every beat
     const every = power > 0.6 ? 1 : power > 0.3 ? 2 : 4;
     if (tick % every === 0) {
       const ladder = [...chord, ...chord.map(n => n + 12)];
       const note = ladder[(tick / every) % ladder.length] + 12 + 12 * Math.round(power);
       bell.triggerAttackRelease(midi(note), '8n', time, 0.35 + 0.55 * power);
     }
-    // 偶爾閃一下更高的音，像星星
+    // Now and then flash a higher note, like a star
     if (Math.random() < power * 0.25) bell.triggerAttackRelease(midi(chord[2] + 36), '16n', time, 0.4);
   } else if (mood === 'horror') {
-    // 心跳「咚—咚」，越恐怖跳越快
-    const beats = power > 0.85 ? [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14]     // 急跌：心跳狂飆
+    // Heartbeat "thump-thump": the scarier, the faster
+    const beats = power > 0.85 ? [0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14]     // Sharp fall: heartbeat racing
                 : power > 0.6 ? [0, 2, 4, 6, 8, 10, 12, 14]
                 : power > 0.3 ? [0, 2, 8, 10] : [0, 8];
     if (beats.includes(tick)) heart.triggerAttackRelease(tick % 4 === 0 ? 'C1' : 'A0', '8n', time);
-    // 詭異的高音，會顫抖，越恐怖越常出現
+    // Trembling eerie high notes, more frequent the scarier it gets
     const gentle = document.getElementById('gentleMode').checked;
     if ((tick === 4 || tick === 12) && Math.random() < (gentle ? 0.15 : 0.3 + 0.6 * power)) {
       const scary = [73, 78, 83][Math.floor(Math.random() * 3)];
       eerie.triggerAttackRelease(midi(scary), '2n', time);
     }
   } else {
-    // 平靜：慢慢地、隨意地彈幾個五聲音階的音
+    // Calm: slowly and randomly play a few pentatonic notes
     if (tick % 4 === 0 && Math.random() < 0.6) {
       const note = 67 + PENTATONIC[Math.floor(Math.random() * PENTATONIC.length)];
       soft.triggerAttackRelease(midi(note), '4n', time, 0.5);
     }
   }
 
-  // 急轉彎音效：趨勢中突然反方向走一下 →「嘟嘟↑」或「嘟嘟↓」（比暴衝小聲）
+  // Sharp-reversal sound: a sudden move against the trend → "beep-beep↑" or "beep-beep↓" (quieter than a spike)
   if (reversal[cur] && cur !== lastReversalStep && !spikes[cur]) {
     lastReversalStep = cur;
     const notes = reversal[cur] === 'up' ? ['C6', 'G6'] : ['G4', 'C4'];
@@ -1019,7 +1019,7 @@ function onTickInner(time) {
     blip.triggerAttackRelease(notes[1], '32n', time + 0.08);
   }
 
-  // 暴衝音效：每一個暴衝只在第一次播到時響一次
+  // Spike sound: each spike only sounds the first time it's played
   if (spikes[cur] && cur !== lastSpikeStep) {
     lastSpikeStep = cur;
     playSpike(spikes[cur], time);
@@ -1027,24 +1027,24 @@ function onTickInner(time) {
     setTimeout(() => showSpike(pips), 0);
   }
 
-  // 波動很大時，不管什麼情緒都加上急促的鈸聲
+  // When volatility is very high, add urgent hi-hats whatever the mood
   if ((wind > 0.45 && tick % 2 === 0) || wind > 0.75) hat.triggerAttackRelease('32n', time);
 
-  // 即時模式：資料由 live.js 自己的計時器送進來，畫面也由它更新；這裡只負責「照目前的資料演奏音樂」
+  // Live mode: data is fed in by live.js's own timer, which also updates the screen; here we only "play music for the current data"
   if (typeof liveActive !== 'undefined' && liveActive) { tick = (tick + 1) % 16; return; }
 
-  // 資料前進和畫面更新由下面的「前進計時器」負責，這裡只演奏目前這一步的音樂
+  // Advancing the data and updating the screen is done by the "step timer" below; here we only play the music for the current step
   tick = (tick + 1) % 16;
 }
 
-// ===== 前進計時器（回放／猜猜樂／生存遊戲）=====
-// 以前資料是跟著音效引擎的時鐘前進，音效引擎一卡，整個遊戲就停在那一步。
-// 現在改用一般的計時器推進：就算聲音出問題，圖表和遊戲也會照常往前走。
+// ===== Step timer (replay / guessing game / survive game) =====
+// The data used to advance with the sound engine's clock, so if the sound engine stalled, the whole game froze on that step.
+// Now an ordinary timer drives it: even if the sound has problems, the chart and game keep moving.
 let stepTimer = null;
 function stepLoop() {
   stepTimer = null;
-  if (loopId === null) return;                                   // 已經停止
-  if (typeof liveActive !== 'undefined' && liveActive) return;   // 即時模式由 live.js 自己推進
+  if (loopId === null) return;                                   // Already stopped
+  if (typeof liveActive !== 'undefined' && liveActive) return;   // Live mode is advanced by live.js itself
   const isPaused = typeof paused !== 'undefined' && paused;
   if (!isPaused) {
     if (step >= prices.length) {
@@ -1054,15 +1054,15 @@ function stepLoop() {
     updateScreen(step);
     step++;
   }
-  // 每一步的長度 = 幾個 16 分音符（速度選單），音樂越激烈（bpm 越快）走得越快
+  // Length of each step = some number of 16th notes (speed menu); the more intense the music (faster bpm), the faster it moves
   const speedId = typeof surviving !== 'undefined' && surviving ? 'surviveSpeed' : 'speedSelect';
   const every = Number(document.getElementById(speedId).value) || 4;
-  const bpm = Math.max(40, Math.min(125, currentTempo || 76));   // 音樂可以很快，但圖表最多只快到 125 bpm 的步調，遊戲才來得及反應
+  const bpm = Math.max(40, Math.min(125, currentTempo || 76));   // The music can be very fast, but the chart only goes as fast as 125 bpm, so players have time to react
   stepTimer = setTimeout(stepLoop, every * 60000 / (bpm * 4));
 }
 
-// 改變速度：不用「漸變」（Tone.js 的速度漸變在劇烈變化時可能讓整個頁面卡死），
-// 改成直接跳到新速度，而且只有差 4 bpm 以上、距離上次至少 2 秒才改，避免累積大量速度變化
+// Change tempo: no "ramps" (Tone.js tempo ramps can freeze the whole page during big changes);
+// jump straight to the new tempo instead, and only when it differs by 4+ bpm and at least 2 seconds have passed, to avoid piling up tempo changes
 let lastTempoAt = 0;
 function setTempo(target) {
   target = Math.round(Math.max(50, Math.min(175, target)));
@@ -1080,7 +1080,7 @@ const MOOD_STYLE = {
   calm:   { label: '😌 Calm',   color: '#8fd3b5', background: '#0d1424' }
 };
 
-// 圖表左下角的風暴預警（回放和生存模式都會顯示）
+// Storm warning in the chart's bottom-left corner (shown in replay and survive mode)
 let shownWarn = 0;
 function showStormBanner(i) {
   const banner = document.getElementById('stormBanner');
@@ -1091,21 +1091,21 @@ function showStormBanner(i) {
     ' · volatility ' + stormRatio[i].toFixed(1) + '× normal';
   banner.style.background = level === 2 ? '#ff4d4f' : '#faad14';
   banner.style.color = level === 2 ? '#ffffff' : '#3a2e00';
-  if (level > shownWarn && !(typeof surviving !== 'undefined' && surviving)) playAlarm(level);  // 生存模式自己處理
+  if (level > shownWarn && !(typeof surviving !== 'undefined' && surviving)) playAlarm(level);  // Survive mode handles this itself
   shownWarn = level;
 }
 
-// 保護畫面更新：任何一次出錯都只略過那一次，不會讓之後的畫面（和遊戲）整個卡住。
-// （Tone.js 的畫面排程只要遇到一次錯誤就會停止，這就是之前「卡在某一步不動」的原因）
+// Protect screen updates: any single error only skips that one update, instead of freezing every later screen (and the game).
+// (Tone.js's draw scheduling stops after a single error — that's why it used to "get stuck on one step")
 function updateScreen(i) {
   try { updateScreenInner(i); }
   catch (e) { console.error('Screen update error (skipped one step):', e); }
 }
 
 function updateScreenInner(i) {
-  if (typeof surviving !== 'undefined' && surviving) surviveStep(i);   // 生存模式：算錢、播報、特效
+  if (typeof surviving !== 'undefined' && surviving) surviveStep(i);   // Survive mode: money, commentary, effects
   const live = typeof liveActive !== 'undefined' && liveActive;
-  if (live) liveStep(i);    // 即時監控模式：滾動圖表、警報（它自己畫圖）
+  if (live) liveStep(i);    // Live monitor mode: scrolling chart, alerts (it draws its own chart)
   else {
     const marker = prices.map(() => null);
     marker[i] = prices[i];
@@ -1113,10 +1113,10 @@ function updateScreenInner(i) {
     chart.update();
   }
 
-  if (hideAnswer) return;   // 遊戲中：不能讓畫面洩漏答案
+  if (hideAnswer) return;   // During the game: the screen must not give away the answer
 
   const style = MOOD_STYLE[moodAt(i)];
-  document.body.style.background = style.background;     // 背景顏色跟著情緒變
+  document.body.style.background = style.background;     // Background colour follows the mood
   const moodText = document.getElementById('keyText');
   moodText.textContent = style.label + (moodAt(i) === 'calm' ? '' : ' ' + Math.round(Math.max(intensity[i], moodAt(i) !== moods[i] ? 0.6 : 0) * 100) + '%');
   if (live && typeof liveQuiet !== 'undefined' && liveQuiet) moodText.textContent = '😴 Quiet — music paused';
@@ -1133,12 +1133,12 @@ function updateScreenInner(i) {
   meter.style.background = s > 0.7 ? '#ff4d4f' : s > 0.35 ? '#faad14' : '#3ecf8e';
 }
 
-// ---------- 7. 按鈕 ----------
+// ---------- 7. Buttons ----------
 let loopId = null;
 
-// ===== 畫面上的錯誤回報（不用開 F12 也看得到哪裡出錯）=====
+// ===== On-screen error report (see what went wrong without opening F12) =====
 const pageErrors = [];
-function reportError(msg) { try { reportErrorInner(msg); } catch (e) { /* 回報本身不能再出錯 */ } }
+function reportError(msg) { try { reportErrorInner(msg); } catch (e) { /* Reporting itself must never throw */ } }
 function reportErrorInner(msg) {
   pageErrors.push(new Date().toLocaleTimeString() + '  ' + msg);
   if (pageErrors.length > 4) pageErrors.shift();
@@ -1160,7 +1160,7 @@ window.addEventListener('unhandledrejection', e => reportError('Promise: ' + (e.
 const _consoleError = console.error.bind(console);
 console.error = (...args) => { _consoleError(...args); reportError(args.map(a => a && a.stack ? a.stack.split('\n').slice(0, 2).join(' ') : String(a)).join(' ')); };
 
-// 按 D：顯示診斷資訊（資料、音樂引擎、聲音狀態）
+// Press D: show diagnostics (data, music engine, sound state)
 function diagnostics() {
   const live = typeof liveActive !== 'undefined' && liveActive;
   return 'step ' + step + '/' + prices.length + (times[step] ? ' (' + times[step] + ')' : '') +
@@ -1181,9 +1181,9 @@ document.addEventListener('keydown', e => {
   window._diagTimer = setInterval(() => { try { box.textContent = '🩺 ' + diagnostics(); } catch (err) { box.textContent = String(err); } }, 500);
 });
 
-// ===== 音樂引擎看門狗（所有模式）=====
-// 如果正在播放，但音樂引擎超過 1.5 秒沒有動（例如音效裝置卡住、瀏覽器暫停聲音），
-// 就自動重新啟動。重試 3 次還是不行，就在畫面上請使用者點一下。
+// ===== Music-engine watchdog (all modes) =====
+// If we're playing but the music engine hasn't moved for over 1.5 seconds (e.g. the audio device stalled or the browser paused sound),
+// restart it automatically. If 3 retries still fail, ask the user to click on the page.
 let watchdogTries = 0;
 setInterval(() => {
   const isPaused = typeof paused !== 'undefined' && paused;
@@ -1193,7 +1193,7 @@ setInterval(() => {
   console.warn('Music engine stalled (try ' + watchdogTries + '). Audio state:', Tone.context.state,
                'audio time:', Tone.context.currentTime);
   if (Tone.context.state !== 'running') Tone.context.resume();
-  if (Tone.Transport.state !== 'started') Tone.Transport.start();   // 已經在跑就不要重複 start（會讓時間軸亂跳）
+  if (Tone.Transport.state !== 'started') Tone.Transport.start();   // Don't start it again if it's already running (that makes the timeline jump)
   lastTickAt = performance.now();
   if (watchdogTries >= 3) showStall();
 }, 1000);
@@ -1212,24 +1212,24 @@ function showStall() {
   box.style.display = 'block';
 }
 function hideStall() { const box = document.getElementById('stallBox'); if (box) box.style.display = 'none'; }
-let finishing = false;      // 播完時只觸發一次「結束」
-let onFinished = null;      // 播完後要做的事（遊戲會用到）
+let finishing = false;      // Fire "finished" only once at the end
+let onFinished = null;      // What to do after it finishes (used by the games)
 
 async function play() {
-  await Tone.start();                       // 瀏覽器規定要使用者按下按鈕才能發聲
+  await Tone.start();                       // Browsers require a button press before any sound can play
   if (step >= prices.length) step = 0;
   tick = 0;
   finishing = false;
   lastSpikeStep = -1;
   lastReversalStep = -1;
-  Tone.Transport.bpm.cancelScheduledValues(0);   // 清掉之前所有的速度變化紀錄
+  Tone.Transport.bpm.cancelScheduledValues(0);   // Clear all previous tempo changes
   Tone.Transport.bpm.value = 76;
   currentTempo = 76; lastTempoAt = 0;
   loopId = Tone.Transport.scheduleRepeat(onTick, '16n');
   Tone.Transport.start();
   clearTimeout(stepTimer);
   stepTimer = setTimeout(stepLoop, 30);
-  document.body.classList.add('playing');            // 讓左上角的等化器動起來
+  document.body.classList.add('playing');            // Animate the equaliser in the top-left corner
   document.getElementById('playBtn').disabled = true;
   document.getElementById('stopBtn').disabled = false;
 }
@@ -1238,7 +1238,7 @@ function stop() {
   clearTimeout(stepTimer); stepTimer = null;
   Tone.Transport.stop();
   if (loopId !== null) { Tone.Transport.clear(loopId); loopId = null; }
-  pad.releaseAll(); drone.releaseAll(); eerie.triggerRelease();   // 把還在響的長音關掉
+  pad.releaseAll(); drone.releaseAll(); eerie.triggerRelease();   // Stop any sustained notes still ringing
   document.body.classList.remove('playing');
   document.getElementById('playBtn').disabled = false;
   document.getElementById('stopBtn').disabled = true;
@@ -1246,9 +1246,9 @@ function stop() {
 
 document.getElementById('playBtn').addEventListener('click', play);
 document.getElementById('stopBtn').addEventListener('click', stop);
-// 從頭開始播
+// Play from the start
 document.getElementById('restartBtn').addEventListener('click', () => { stop(); step = 0; play(); });
-// 音量（單位是分貝，0 = 原本的音量）
+// Volume (in decibels, 0 = original volume)
 document.getElementById('volume').addEventListener('input', e => {
   Tone.Destination.volume.value = Number(e.target.value);
 });
@@ -1264,8 +1264,8 @@ document.getElementById('fileInput').addEventListener('change', async (event) =>
   loadData(loaded);
 });
 
-// ---------- 8. 資料選單 ----------
-// 內建的資料：data.js 裡 SGX FX 的真實資料 + 一份假資料
+// ---------- 8. Data menu ----------
+// Built-in data: the real SGX FX data in data.js + one fake dataset
 const datasets = {};
 if (typeof MARKET_DATA !== 'undefined') Object.assign(datasets, MARKET_DATA);
 datasets['Demo (fake storm)'] = makeFakeData();
@@ -1281,31 +1281,31 @@ Object.keys(datasets).forEach(addOption);
 document.getElementById('datasetSelect').addEventListener('change', e => loadData(datasets[e.target.value]));
 document.getElementById('viewSelect').addEventListener('change', () => loadData(full));
 
-// ---------- 9. 遊戲模式：用聽的猜漲跌 ----------
-// 每一回合：從真實資料裡隨機挑一段「很明顯在漲／平穩／在跌」的 30 分鐘，
-// 蓋住圖表只播音樂，玩家猜市場在做什麼，猜完揭曉圖表。
+// ---------- 9. Game mode: guess rise or fall by ear ----------
+// Each round: randomly pick a 30-minute stretch of real data that's "clearly rising / flat / falling",
+// cover the chart and play only the music; the player guesses what the market is doing, then the chart is revealed.
 const ROUNDS = 5;
-const SEGMENT = 30;          // 每回合播幾步（幾分鐘的資料）
-let hideAnswer = false;      // true = 遊戲進行中，畫面不顯示任何提示
+const SEGMENT = 30;          // How many steps per round (minutes of data)
+let hideAnswer = false;      // true = game in progress; the screen shows no hints
 let round = 0, score = 0, answer = null, answered = false;
 
 const realNames = () => Object.keys(datasets).filter(name => !name.startsWith('Demo'));
 
-// 挑一段答案很明確的資料
+// Pick a stretch of data with a clear answer
 function pickSegment() {
   const targets = ['heaven', 'calm', 'horror'];
-  const target = targets[Math.floor(Math.random() * 3)];   // 先決定這回合的答案
+  const target = targets[Math.floor(Math.random() * 3)];   // Decide this round's answer first
   for (let tries = 0; tries < 300; tries++) {
     const names = realNames();
     const data = datasets[names[Math.floor(Math.random() * names.length)]];
 
-    // 用「整天」的資料分析情緒（這樣判斷標準跟整天一致），再切出其中一段
+    // Analyse the mood on the "whole day" (so the standard matches the whole day), then cut out a section
     prices = data.c.slice(); ranges = data.h.map((h, k) => h - data.l[k]); times = data.t.slice();
     analyse();
     const start = Math.floor(Math.random() * (prices.length - SEGMENT));
     const part = moods.slice(start, start + SEGMENT);
     const share = part.filter(m => m === target).length / SEGMENT;
-    // 價格本身也要跟答案一致：天堂要真的有漲、恐怖要真的有跌、平穩的淨變動要很小
+    // The price itself must match the answer too: heaven must really rise, horror must really fall, calm must have a very small net change
     const net = (prices[start + SEGMENT - 1] - prices[start]) / prices[start];
     const priceAgrees = target === 'heaven' ? net > 0.00004
                       : target === 'horror' ? net < -0.00004
@@ -1316,7 +1316,7 @@ function pickSegment() {
       moods = cut(moods); intensity = cut(intensity); storm = cut(storm);
       stormRatio = cut(stormRatio); warnLevel = cut(warnLevel);
       lineMoods = cut(lineMoods); reversal = cut(reversal);
-      // 暴衝：要同時「以整天來看很大」和「以這一段來看也很大」才算，免得劇烈時段一直響
+      // Spikes: must be big "for the whole day" and also big "for this section", so busy periods don't keep firing
       const dayWide = cut(spikes);
       computeSpikes();
       spikes = spikes.map((value, k) => (dayWide[k] ? value : 0));
@@ -1326,14 +1326,14 @@ function pickSegment() {
   return null;
 }
 
-// ---------- 盲聽測試：把每一位玩家的作答累計起來 ----------
-// 存在這台電腦的瀏覽器裡，所以在會場找好幾個人玩，結果會一直累積
+// ---------- Blind listening test: add up every player's answers ----------
+// Stored in this computer's browser, so if several people play at the venue, the results keep accumulating
 function loadBlind() {
   try { return JSON.parse(localStorage.getItem('ms_blindTest')) || { heaven: [0, 0], calm: [0, 0], horror: [0, 0] }; }
   catch (e) { return { heaven: [0, 0], calm: [0, 0], horror: [0, 0] }; }
 }
 function saveBlind(data) {
-  try { localStorage.setItem('ms_blindTest', JSON.stringify(data)); } catch (e) { /* 存不了就算了 */ }
+  try { localStorage.setItem('ms_blindTest', JSON.stringify(data)); } catch (e) { /* If it can't be saved, never mind */ }
 }
 function showBlind() {
   const data = loadBlind();
@@ -1354,7 +1354,7 @@ function updateRoundText() {
 }
 
 function startRound() {
-  if (round >= ROUNDS) { round = 0; score = 0; }   // 玩完了就重新開始
+  if (round >= ROUNDS) { round = 0; score = 0; }   // Finished — start again
   round++;
   answer = pickSegment();
   if (!answer) { document.getElementById('feedback').textContent = 'Could not find a clear segment, try again.'; return; }
@@ -1379,13 +1379,13 @@ function guess(choice) {
   answered = true;
   stop();
   if (choice === answer) score++;
-  const blind = loadBlind();                 // 記到盲聽測試的總成績
+  const blind = loadBlind();                 // Record in the blind-test totals
   blind[answer][1]++;
   if (choice === answer) blind[answer][0]++;
   saveBlind(blind);
   showBlind();
   hideAnswer = false;
-  document.getElementById('cover').classList.add('hidden');   // 揭曉圖表
+  document.getElementById('cover').classList.add('hidden');   // Reveal the chart
   document.getElementById('feedback').textContent =
     (choice === answer ? '✅ Correct! ' : '❌ Not quite. ') +
     'The market was ' + ANSWER_TEXT[answer] + ' — ' + times[0] + ' to ' + times[times.length - 1] +
@@ -1404,9 +1404,9 @@ document.getElementById('answerDown').addEventListener('click', () => guess('hor
 document.getElementById('startRoundBtn').addEventListener('click', startRound);
 document.getElementById('replayRoundBtn').addEventListener('click', () => { stop(); step = 0; play(); });
 
-// ---------- 10. 切換模式 ----------
-//   'replay'：回放、'game'：猜漲跌、'survive'：生存遊戲
-// 視窗大小改變（例如半螢幕 → 全螢幕）後，讓圖表重新量一次寬度，不會卡在舊的大小
+// ---------- 10. Switch mode ----------
+//   'replay': replay, 'game': guess rise/fall, 'survive': survive game
+// After the window size changes (e.g. half screen → full screen), make the chart re-measure its width so it isn't stuck at the old size
 let resizeTimer = null;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
@@ -1430,8 +1430,8 @@ function showMode(mode) {
   document.getElementById('cover').classList.add('hidden');
   hideAnswer = false;
   document.body.style.background = '#0d1424';
-  document.body.classList.toggle('mode-survive', mode === 'survive');   // 生存模式：走勢圖為主、交易員在旁邊
-  setTimeout(() => { try { chart.resize(); } catch (e) {} }, 0);   // 生存模式的圖比較矮（由 CSS 決定），換模式後重新量一次
+  document.body.classList.toggle('mode-survive', mode === 'survive');   // Survive mode: the chart is the main view, with the trader beside it
+  setTimeout(() => { try { chart.resize(); } catch (e) {} }, 0);   // Survive mode's chart is shorter (set by CSS); re-measure after switching modes
 
   if (mode === 'game') {
     round = 0; score = 0; answer = null;
@@ -1456,10 +1456,10 @@ document.getElementById('gameTab').addEventListener('click', () => showMode('gam
 document.getElementById('surviveTab').addEventListener('click', () => showMode('survive'));
 document.getElementById('liveTab').addEventListener('click', () => showMode('live'));
 
-// 一打開網頁就載入第一份資料
+// Load the first dataset as soon as the page opens
 loadData(datasets[Object.keys(datasets)[0]]);
 </script>
-<!-- 播報員和生存遊戲放在另外兩個檔案（要和 index.html 放在同一個資料夾） -->
+<!-- The narrator and survive game live in separate files (keep them in the same folder as index.html) -->
 <script src="narrator.js"></script>
 <script src="survive.js"></script>
 <script src="report.js"></script>

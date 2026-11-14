@@ -1,13 +1,13 @@
 // =====================================================================
-// 戲劇化播報員
+// Dramatic narrator
 //
-// 三種等級，有什麼用什麼：
-//   1. 沒有任何 API key：用內建的搞笑台詞 + 瀏覽器內建的語音（免費、不用網路設定）
-//   2. 有 Gemini key：讓 Gemini 根據當下的市場狀況，即時寫一句浮誇的評論
-//   3. 有 ElevenLabs key：用 ElevenLabs 的電影預告片聲音唸出來
-// 任何一步失敗，都會自動退回上一級，不會讓遊戲壞掉。
+// Three levels; uses whatever is available:
+//   1. No API key: built-in funny lines + the browser's built-in voice (free, no setup)
+//   2. Gemini key: Gemini writes an over-the-top line in real time based on the current market
+//   3. ElevenLabs key: read it out with an ElevenLabs movie-trailer voice
+// If any step fails, it automatically falls back to the level below, so the game never breaks.
 //
-// ⚠️ API key 只存在你自己的瀏覽器裡，不要把 key 寫進程式碼或推上 GitHub。
+// ⚠️ API keys are stored only in your own browser — never put a key in the code or push it to GitHub.
 // =====================================================================
 
 const LINES = {
@@ -97,8 +97,8 @@ const LINES = {
   ]
 };
 
-// 專業版台詞（Live monitor 用）：簡短、清楚、不搞笑，像真正的交易提示
-// 每一句都是函式，可以把當下的價格、波動放進去
+// Professional lines (for Live monitor): short, clear, no jokes, like real trading alerts
+// Each line is a function so the current price and volatility can be filled in
 const PRO_LINES = {
   heaven: f => 'EUR/USD is rising' + (f.price ? ', now ' + f.price : '') + '.',
   horror: f => 'EUR/USD is falling' + (f.price ? ', now ' + f.price : '') + '.',
@@ -107,35 +107,35 @@ const PRO_LINES = {
     (f.myPositionCouldSwingIn10MinUSD ? ' Your position could swing about ' + f.myPositionCouldSwingIn10MinUSD.toLocaleString('en-GB') + ' dollars in the next ten minutes.' : ''),
   spike: f => 'Sharp price move detected' + (f.price ? ' at ' + f.price : '') + '.'
 };
-// 現在是不是「專業模式」：Live monitor 開著的時候就是
+// Are we in "professional mode": yes whenever Live monitor is running
 const proMode = () => typeof liveActive !== 'undefined' && liveActive;
 
-// ---------- 設定（存在瀏覽器裡） ----------
+// ---------- Settings (stored in the browser) ----------
 function loadSetting(name) {
   try { return localStorage.getItem('ms_' + name) || ''; } catch (e) { return ''; }
 }
 function saveSetting(name, value) {
-  try { localStorage.setItem('ms_' + name, value); } catch (e) { /* 有些環境不能存，沒關係 */ }
+  try { localStorage.setItem('ms_' + name, value); } catch (e) { /* Some environments can't store data; that's fine */ }
 }
 const setting = id => document.getElementById(id).value.trim();
 
-let lastSpoken = 0;        // 上次說話的時間，避免一直講個不停
+let lastSpoken = 0;        // When we last spoke, so it doesn't talk non-stop
 let speaking = false;
 
-// 對外只有這一個函式：發生了某件事 → 播報員講一句話
-//   event：'horror' | 'heaven' | 'calm' | 'spike' | 'marginCall' | 'bigWin' | 'end'
-//   facts：給 Gemini 參考的市場資訊（時間、價格、漲跌了幾 pip、玩家的錢）
+// The only public function: something happened → the narrator says one line
+//   event: 'horror' | 'heaven' | 'calm' | 'spike' | 'marginCall' | 'bigWin' | 'end'
+//   facts: market info for Gemini (time, price, pips moved, the player's money)
 async function narrate(event, facts, force) {
   if (!document.getElementById('narratorOn').checked) return;
   const now = Date.now();
-  if (!force && (speaking || now - lastSpoken < 3500)) return;   // 至少間隔 3.5 秒，像球評一樣講不停
-  // 重要時刻直接插話（由 speakLine 負責打斷前一句）
+  if (!force && (speaking || now - lastSpoken < 3500)) return;   // At least 3.5 seconds apart, chatty like a football commentator
+  // Important moments cut in straight away (speakLine handles interrupting the previous line)
   lastSpoken = now;
   speaking = true;
 
-  // Live monitor 的安靜模式：不說話
+  // Live monitor quiet mode: say nothing
   if (proMode() && typeof liveQuiet !== 'undefined' && liveQuiet) { speaking = false; return; }
-  // Live monitor：用專業的提示語，不用 Gemini 搞笑（提示要穩定、可預期）
+  // Live monitor: use professional alerts, no Gemini jokes (alerts should be steady and predictable)
   if (proMode()) {
     const make = PRO_LINES[event];
     if (!make) { speaking = false; return; }
@@ -149,15 +149,15 @@ async function narrate(event, facts, force) {
     if (setting('geminiKey')) line = await askGemini(event, facts) || line;
   } catch (e) { console.warn('Gemini failed, using built-in line', e); }
 
-  // 終場的評論和賽後報告排隊講，不互相打斷
+  // End-of-match commentary and the post-match report queue up instead of interrupting each other
   await speakLine(line, event, ['end', 'endLoss', 'newBest'].includes(event));
   speaking = false;
 }
 
-// 直接唸出一句指定的話
-// 同一時間只會有一個人聲，而且每句之間停頓一下（像人講話會換氣）：
-//   新的一句要等前一句講完；等待中只保留「最新的一句」（舊的就不講了，免得越積越多、越講越落後）
-//   keep = true 的句子（終場評論、賽後報告）一定會依序講完
+// Read out a given line
+// Only one voice at a time, with a short pause between lines (like a person taking a breath):
+//   a new line waits for the previous one to finish; while waiting, only "the newest line" is kept (older ones are dropped so it doesn't pile up and fall behind)
+//   lines with keep = true (end-of-match commentary, post-match report) are always read in order
 const BREATH_MS = 450;
 let speechToken = 0;
 let currentAudio = null;
@@ -189,7 +189,7 @@ async function pumpSpeech() {
       if (my === speechToken) { console.warn('ElevenLabs failed, using browser voice', e); await speakBrowser(p.line, p.event); }
     }
     p.resolve();
-    await new Promise(r => setTimeout(r, BREATH_MS));   // 換氣
+    await new Promise(r => setTimeout(r, BREATH_MS));   // Take a breath
   }
   speechBusy = false;
 }
@@ -199,7 +199,7 @@ function pickLine(event) {
   return list[Math.floor(Math.random() * list.length)];
 }
 
-// ---------- Gemini：寫一句即時評論 ----------
+// ---------- Gemini: write a live comment ----------
 async function askGemini(event, facts) {
   const prompt =
     'You are an excited British football commentator doing live play-by-play of a EUR/USD currency market ' +
@@ -212,7 +212,7 @@ async function askGemini(event, facts) {
   return text ? text.trim().replace(/^"|"$/g, '') : null;
 }
 
-// 呼叫 Gemini：送出一段提示，拿回一段文字（播報和賽後報告都用這個）
+// Call Gemini: send a prompt, get text back (used by both commentary and the post-match report)
 async function geminiGenerate(prompt) {
   const model = setting('geminiModel') || 'gemini-2.5-flash';
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model +
@@ -227,15 +227,15 @@ async function geminiGenerate(prompt) {
   return data.candidates?.[0]?.content?.parts?.[0]?.text || null;
 }
 
-// ---------- ElevenLabs：把句子變成聲音 ----------
-// 免費方案用 API 時，舊的「legacy」聲音（例如預設的 Rachel）會被拒絕（HTTP 402）。
-// 遇到 402 時，自動去帳號裡找一個免費可用的預設聲音，記下來，之後都用它。
+// ---------- ElevenLabs: turn a line into speech ----------
+// On the free plan, the API rejects old "legacy" voices (e.g. the default Rachel) with HTTP 402.
+// On a 402, automatically find a free-to-use default voice in the account, remember it and use it from then on.
 let elevenVoiceFixTried = false;
 async function findFreeVoice() {
   const r = await fetch('https://api.elevenlabs.io/v1/voices', { headers: { 'xi-api-key': setting('elevenKey') } });
   if (!r.ok) return null;
   const voices = (await r.json()).voices || [];
-  // 先找「自己的」聲音（Voice Design 生成的、或複製的），免費方案的 API 只能用這些
+  // First look for the user's "own" voices (made with Voice Design, or cloned); the free-plan API can only use these
   const own = voices.find(v => ['generated', 'cloned', 'professional'].includes(v.category));
   const ok = v => v.category === 'premade' && !v.is_legacy;
   const pick = own || voices.find(v => ok(v) && /^(George|Sarah|Brian|Alice|Daniel|Charlotte)$/i.test(v.name)) ||
@@ -248,12 +248,12 @@ async function speakEleven(line, event, my = speechToken) {
   const response = await fetch('https://api.elevenlabs.io/v1/text-to-speech/' + voice, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'xi-api-key': setting('elevenKey') },
-    // stability 越低，語氣起伏越大、越有情緒；style 越高，越誇張
+    // Lower stability = more ups and downs and more emotion; higher style = more exaggerated
     body: JSON.stringify({ text: line, model_id: 'eleven_multilingual_v2',
       voice_settings: { stability: event === 'pro' ? 0.8 : event === 'calm' ? 0.5 : 0.25, similarity_boost: 0.8,
                         style: event === 'pro' ? 0 : event === 'calm' ? 0.2 : 0.7, use_speaker_boost: true } })
   });
-  if (response.status === 402 && !elevenVoiceFixTried) {   // 每次打開網頁只自動換一次
+  if (response.status === 402 && !elevenVoiceFixTried) {   // Only switch automatically once per page load
     elevenVoiceFixTried = true;
     const pick = await findFreeVoice();
     if (pick && pick.voice_id !== voice) {
@@ -264,7 +264,7 @@ async function speakEleven(line, event, my = speechToken) {
     }
   }
   if (!response.ok) {
-    // 把 ElevenLabs 回傳的原因顯示出來（例如金鑰沒有權限、免費方案被擋）
+    // Show the reason ElevenLabs gave (e.g. key lacks permission, free plan blocked)
     let detail = '';
     try { const j = await response.json(); detail = (j.detail && (j.detail.message || j.detail.status || JSON.stringify(j.detail))) || ''; } catch (e) {}
     const msg = 'ElevenLabs HTTP ' + response.status + (detail ? ' — ' + detail : '');
@@ -272,7 +272,7 @@ async function speakEleven(line, event, my = speechToken) {
     throw new Error(msg);
   }
   const blob = await response.blob();
-  if (my !== speechToken) return;          // 下載期間已經有新的一句了：這句不播，避免兩個人聲疊在一起
+  if (my !== speechToken) return;          // A newer line arrived while downloading: don't play this one, so two voices never overlap
   const audio = new Audio(URL.createObjectURL(blob));
   currentAudio = audio;
   const done = new Promise(resolve => { audio.onended = resolve; audio.onerror = resolve; });
@@ -281,10 +281,10 @@ async function speakEleven(line, event, my = speechToken) {
   if (currentAudio === audio) currentAudio = null;
 }
 
-// ---------- 備案：瀏覽器內建語音（免費） ----------
-// 每種情緒用不同的語速和音高：恐怖 = 慢、低沉；暴衝 = 快、激動；天堂 = 輕快、高一點
+// ---------- Fallback: the browser's built-in voice (free) ----------
+// Each mood uses a different rate and pitch: horror = slow and low; spike = fast and excited; heaven = light and a little higher
 const MOOD_VOICE = {
-  pro:          { rate: 1.0, pitch: 1.0 },      // 專業模式：平穩的語氣
+  pro:          { rate: 1.0, pitch: 1.0 },      // Professional mode: steady tone
   stormWarning: { rate: 1.2, pitch: 0.9 },
   shield:      { rate: 1.2,  pitch: 1.1 },
   newBest:     { rate: 1.25, pitch: 1.3 },
@@ -305,7 +305,7 @@ const MOOD_VOICE = {
   end:        { rate: 1.0,  pitch: 1.0 }
 };
 
-// 電腦裡的語音有好有壞。名字裡有 Natural / Neural / Online / Google 的，通常比較像真人。
+// Computer voices vary in quality. Names with Natural / Neural / Online / Google usually sound more human.
 function bestVoices() {
   const all = ('speechSynthesis' in window) ? speechSynthesis.getVoices().filter(v => v.lang.startsWith('en')) : [];
   const score = v => (/natural|neural/i.test(v.name) ? 3 : 0) + (/online|google/i.test(v.name) ? 2 : 0) +
@@ -326,7 +326,7 @@ function fillVoiceMenu() {
   if (saved && [...menu.options].some(o => o.value === saved)) menu.value = saved;
 }
 if ('speechSynthesis' in window) {
-  speechSynthesis.onvoiceschanged = fillVoiceMenu;   // 有些瀏覽器要等一下才拿得到語音清單
+  speechSynthesis.onvoiceschanged = fillVoiceMenu;   // Some browsers need a moment before the voice list is available
   fillVoiceMenu();
 }
 document.getElementById('browserVoice').addEventListener('change', e => saveSetting('browserVoice', e.target.value));
@@ -343,11 +343,11 @@ function speakBrowser(line, event) {
     utterance.pitch = style.pitch;
     utterance.onend = resolve;
     utterance.onerror = resolve;
-    speechSynthesis.speak(utterance);  // 一次只排一句（由 speakLine 的佇列控制），不會重疊
+    speechSynthesis.speak(utterance);  // Only one line is queued at a time (controlled by speakLine's queue), so they never overlap
   });
 }
 
-// ---------- 設定欄位：打開網頁時讀回上次存的值，修改時存起來 ----------
+// ---------- Settings fields: load saved values when the page opens, save on change ----------
 ['geminiKey', 'geminiModel', 'elevenKey', 'elevenVoice'].forEach(id => {
   const input = document.getElementById(id);
   input.value = loadSetting(id) || input.value;

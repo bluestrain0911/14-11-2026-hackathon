@@ -1,23 +1,23 @@
 // =====================================================================
-// 賽後報告：像足球賽後的「球員評分」
+// Post-match report: like a football "player rating"
 //
-// 沒有 Gemini key：用規則算出評分和建議（一定能用）
-// 有 Gemini key：讓 Gemini 看完你整局的交易紀錄，寫一份像球評一樣的個人化報告
+// No Gemini key: rating and tips are calculated by rules (always works)
+// Gemini key: Gemini reads your whole game's trades and writes a personalised, commentator-style report
 // =====================================================================
 
 const money$ = n => (n >= 0 ? '+$' : '-$') + Math.abs(Math.round(n)).toLocaleString();
 const escapeHtml = text => text.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 
-// 用規則打分數（1～10 分）
+// Rule-based score (1–10)
 function ruleRating(stats) {
-  let rating = 5 + stats.profit / 1000;                  // 每賺 $1,000 加 1 分
-  if (stats.followedMusicPercent >= 60) rating += 0.5;   // 有在聽音樂
-  rating += Math.min(1, stats.shieldSaves * 0.5);        // 懂得用停損
+  let rating = 5 + stats.profit / 1000;                  // +1 point for every $1,000 earned
+  if (stats.followedMusicPercent >= 60) rating += 0.5;   // Listened to the music
+  rating += Math.min(1, stats.shieldSaves * 0.5);        // Knows how to use a stop-loss
   if (stats.wentBroke) rating -= 1;
   return Math.max(1, Math.min(10, Math.round(rating * 2) / 2));
 }
 
-// 用規則寫建議
+// Rule-based tips
 function ruleTips(stats) {
   const tips = [];
   if (stats.trades === 0) {
@@ -75,11 +75,11 @@ async function showReport(stats) {
     '</div>';
   box.classList.remove('hidden');
 
-  // 語音：分數 + 前兩條建議（不看螢幕也聽得到）
+  // Voice: score + the first two tips (heard without looking at the screen)
   const spokenTips = ruleTips(stats).slice(0, 2).map(tip => tip.replace(/[🛡→]/g, ' ').replace(/\s+/g, ' '));
   let spoken = 'Player rating: ' + rating + ' out of ten. ' + spokenTips.join(' ');
 
-  // 有 Gemini key：換成 Gemini 寫的個人化報告
+  // Gemini key: replace with Gemini's personalised report
   if (setting('geminiKey')) {
     const coach = document.getElementById('coachText');
     coach.innerHTML += '<br><i style="color:#9aa0a6">Gemini is writing your match report…</i>';
@@ -103,7 +103,7 @@ async function showReport(stats) {
         const first = lines[0] || '';
         const match = first.match(/(\d+(\.\d)?)\s*\/\s*10/);
         if (match) spoken = 'Player rating: ' + match[1] + ' out of ten. ' +
-          lines.slice(1, 4).map(l => l.replace(/^[-*•]\s*/, '')).join(' ');      // 唸出全部三條建議
+          lines.slice(1, 4).map(l => l.replace(/^[-*•]\s*/, '')).join(' ');      // Read out all three tips
       }
     } catch (e) {
       console.warn('Gemini report failed, keeping the built-in tips', e);
@@ -111,5 +111,5 @@ async function showReport(stats) {
     }
   }
 
-  if (document.getElementById('narratorOn').checked) speakLine(spoken, rating >= 6 ? 'end' : 'endLoss', true);   // 排在終場評論後面講
+  if (document.getElementById('narratorOn').checked) speakLine(spoken, rating >= 6 ? 'end' : 'endLoss', true);   // Queued to play after the end-of-match commentary
 }

@@ -1,52 +1,52 @@
 // =====================================================================
-// 生存模式：Survive the Market Storm
+// Survive mode: Survive the Market Storm
 //
-// 你是一個交易員，手上有 $10,000，每次交易 100 萬歐元（跟 SGX FX 的資料一樣）。
-//   ⬆ / W  ：買進（賭歐元會漲）
-//   ⬇ / S  ：賣出（賭歐元會跌）
-//   空白鍵 ：逃跑，換回現金（不賺也不賠）
-// 價格每動 1 pip（0.0001），你就賺或賠 $100。錢歸零就「追繳保證金」，遊戲結束。
-// 圖表只會畫到「現在」，未來看不到 —— 但音樂聽得出來市場的情緒。
+// You're a trader with $10,000, trading €1,000,000 each time (same as the SGX FX data).
+//   ⬆ / W  : buy (bet the euro will rise)
+//   ⬇ / S  : sell (bet the euro will fall)
+//   Space  : run away back to cash (no gain, no loss)
+// Every 1 pip (0.0001) the price moves, you make or lose $100. Hit zero and it's a "margin call" — game over.
+// The chart only draws up to "now"; you can't see the future — but you can hear the market's mood in the music.
 // =====================================================================
 
 const START_MONEY = 10000;
-const NOTIONAL = 1000000;        // 每次交易 100 萬歐元
-const SWITCH_COST = 20;          // 每次換方向的手續費（買賣價差，約 0.2 pip）
-const GAME_STEPS = 120;          // 一局播幾步（幾分鐘的資料），慢速下大約 1.5 分鐘
+const NOTIONAL = 1000000;        // Each trade is €1,000,000
+const SWITCH_COST = 20;          // Cost of each change of direction (bid-ask spread, about 0.2 pip)
+const GAME_STEPS = 120;          // How many steps per game (minutes of data); about 1.5 minutes at slow speed
 
-let surviving = false;           // 是否正在玩生存模式
+let surviving = false;           // Whether survive mode is being played
 let money = START_MONEY;
-let position = 0;                // 1 = 買進、-1 = 賣出、0 = 現金
+let position = 0;                // 1 = long, -1 = short, 0 = cash
 let lastIndex = -1;
 let lastMood = 'calm';
 let gameOver = false;
 let peakMoney = START_MONEY;
 
-// ---------- 畫面上的動畫狀態 ----------
+// ---------- On-screen animation state ----------
 const stage = document.getElementById('stage');
 const ctx = stage.getContext('2d');
-let particles = [];              // 掉下來的金幣、雨滴
-let popups = [];                 // 浮出來的「+$420」文字
-let ghostUntil = 0;              // 鬼出現到什麼時候
+let particles = [];              // Falling coins and raindrops
+let popups = [];                 // Floating "+$420" text
+let ghostUntil = 0;              // When the ghost disappears
 let lastGhost = 0;
 let frameTime = 0;
-let countdownEnd = 0;            // 開局倒數 3、2、1 到什麼時候
+let countdownEnd = 0;            // When the 3, 2, 1 kick-off countdown ends
 let paused = false;
 
-// 嚇人的尖叫聲（雜訊 + 快速下降的音）
+// Scary scream (noise + a quickly falling tone)
 const screamNoise = new Tone.NoiseSynth({ envelope: { attack: 0.005, decay: 0.5, sustain: 0 } }).toDestination();
 screamNoise.volume.value = -10;
 const screamTone = new Tone.Synth({ oscillator: { type: 'sawtooth' },
   envelope: { attack: 0.01, decay: 0.6, sustain: 0, release: 0.1 } }).toDestination();
 screamTone.volume.value = -12;
-// 輸光時的「哇哇哇～」悲傷長號
+// Sad trombone "wah-wah-wah" when you go broke
 const sadTrombone = new Tone.Synth({ oscillator: { type: 'triangle' },
   envelope: { attack: 0.05, decay: 0.3, sustain: 0.6, release: 0.5 } }).toDestination();
 
 // =====================================================================
-// 球賽氣氛：觀眾、哨聲、汽笛、進球
+// Football-match atmosphere: crowd, whistle, air horn, goals
 // =====================================================================
-// 觀眾：粉紅雜訊 + 帶通濾波器 = 遠遠的一大群人在吵。音量跟著市場激烈程度變大
+// Crowd: pink noise + band-pass filter = a big crowd making noise in the distance. Volume rises with how wild the market is
 const crowdNoise = new Tone.Noise('pink');
 const crowdFilter = new Tone.Filter(900, 'bandpass');
 const crowdGain = new Tone.Gain(0).toDestination();
@@ -54,21 +54,21 @@ crowdNoise.connect(crowdFilter);
 crowdFilter.connect(crowdGain);
 let crowdBase = 0.05;
 
-function crowdRoar() {                       // 歡呼：音量突然衝高再慢慢退
+function crowdRoar() {                       // Cheer: volume jumps up, then slowly fades
   crowdFilter.frequency.rampTo(1300, 0.1);
   crowdGain.gain.rampTo(0.7, 0.15);
   setTimeout(() => { crowdGain.gain.rampTo(crowdBase, 1.8); crowdFilter.frequency.rampTo(900, 1.8); }, 700);
 }
-function crowdGroan() {                      // 「噢～～」：聲音往下掉
+function crowdGroan() {                      // "Ohhh~": the sound drops
   crowdFilter.frequency.rampTo(1100, 0.05);
   crowdGain.gain.rampTo(0.45, 0.1);
   setTimeout(() => { crowdFilter.frequency.rampTo(300, 0.9); crowdGain.gain.rampTo(crowdBase, 1.4); }, 150);
 }
 
-// 裁判哨
+// Referee's whistle
 const whistleSynth = new Tone.Synth({ oscillator: { type: 'sine' },
   envelope: { attack: 0.01, decay: 0.05, sustain: 0.9, release: 0.05 } }).toDestination();
-whistleSynth.volume.value = -22;              // 小聲一點，不要刺耳
+whistleSynth.volume.value = -22;              // A bit quieter, so it isn't harsh
 function whistle(times, long) {
   for (let k = 0; k < times; k++) {
     const start = Tone.now() + k * 0.45;
@@ -76,7 +76,7 @@ function whistle(times, long) {
   }
 }
 
-// 汽笛喇叭（進球時）
+// Air horn (for goals)
 const airhorn = new Tone.PolySynth(Tone.Synth, { oscillator: { type: 'sawtooth' },
   envelope: { attack: 0.02, decay: 0.1, sustain: 0.9, release: 0.1 } }).toDestination();
 airhorn.volume.value = -14;
@@ -87,28 +87,28 @@ function hornBlast() {
   });
 }
 
-let moneyHistory = [];       // 每一步的錢，用來判斷「進球」
+let moneyHistory = [];       // Money at each step, used to detect "goals"
 let lastGoalStep = -99;
 let lastGroanStep = -99;
-let streak = 0;              // 連續賺錢幾步
+let streak = 0;              // How many profitable steps in a row
 
-// ---------- 停損盾牌 🛡️ ----------
-// 每局 3 個。開啟後，這筆交易如果虧超過 $500，就自動幫你逃回現金。
-// 這就是真實交易裡的「停損單」（stop-loss）：事先決定最多願意虧多少，到了就自動出場。
-// 最多願意虧多少：玩家可以在下拉選單自己設定（$300 / $500 / $1,000）
+// ---------- Stop-loss shield 🛡️ ----------
+// 3 per game. Once on, if this trade loses more than $500 it automatically gets you back to cash.
+// This is a real-world "stop-loss order": decide in advance the most you're willing to lose, and exit automatically when you hit it.
+// The most you're willing to lose: players can set it in the dropdown ($300 / $500 / $1,000)
 const shieldLimit = () => Number(document.getElementById('lossLimit').value) || 500;
-let lastWarn = 0;            // 上一步的風暴警報等級
-let promptUntil = 0;         // 「要不要開盾牌？」的提示顯示到什麼時候
+let lastWarn = 0;            // Storm-warning level at the previous step
+let promptUntil = 0;         // How long the "Protect?" prompt stays on screen
 let warningsSeen = 0, warningsProtected = 0;
 let shields = 3, shieldArmed = false, shieldBase = 0;
 
-// ---------- 賽後報告要用的紀錄 ----------
-let trades = [];             // 每一筆交易：方向、開始和結束的時間、賺賠
-let tradeStart = null;       // 目前這筆交易從什麼時候、多少錢開始
-let alignedSteps = 0;        // 有幾步你的操作「跟著音樂」
+// ---------- Records for the post-match report ----------
+let trades = [];             // Every trade: direction, start and end time, profit/loss
+let tradeStart = null;       // When, and at what money level, the current trade started
+let alignedSteps = 0;        // How many steps your moves "followed the music"
 let shieldSaves = 0, goals = 0, groans = 0, lowestMoney = START_MONEY;
 
-// 盾牌擋下來時「鏘！」的金屬聲
+// Metallic "clang!" when the shield blocks a loss
 const clang = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.4, release: 0.2 },
   harmonicity: 5.1, modulationIndex: 32, resonance: 3000, octaves: 1.5 }).toDestination();
 clang.volume.value = -12;
@@ -117,13 +117,13 @@ function bestScore() {
   try { return Number(localStorage.getItem('ms_bestProfit')); } catch (e) { return NaN; }
 }
 
-// ---------- 開始一局 ----------
+// ---------- Start a game ----------
 function startSurvival() {
-  // 隨機挑一天，從「最劇烈的時刻」之前 40～100 分鐘開始，確保一定會遇到風暴
+  // Pick a random day and start 40–100 minutes before its "most violent moment", so you always hit a storm
   const names = Object.keys(datasets).filter(name => !name.startsWith('Demo'));
   const data = datasets[names[Math.floor(Math.random() * names.length)]];
   prices = data.c.slice(); ranges = data.h.map((h, k) => h - data.l[k]); times = data.t.slice();
-  analyse();                                   // 用整天的資料判斷情緒，標準才一致
+  analyse();                                   // Judge mood from the whole day's data so the standard is consistent
   let peak = 0;
   ranges.forEach((r, k) => { if (r > ranges[peak]) peak = k; });
   const start = Math.max(0, Math.min(prices.length - GAME_STEPS, peak - 40 - Math.floor(Math.random() * 60)));
@@ -132,7 +132,7 @@ function startSurvival() {
   moods = cut(moods); intensity = cut(intensity); storm = cut(storm);
   stormRatio = cut(stormRatio); warnLevel = cut(warnLevel);
   lineMoods = cut(lineMoods); reversal = cut(reversal);
-  computeSpikes();     // 暴衝用「這一局」的標準重新算，不然風暴時段會一直響
+  computeSpikes();     // Recompute spikes with "this game's" standard, or a stormy stretch would keep firing
 
   money = START_MONEY; peakMoney = START_MONEY; position = 0; lastIndex = -1;
   moneyHistory = []; lastGoalStep = -99; lastGroanStep = -99; streak = 0;
@@ -144,7 +144,7 @@ function startSurvival() {
   lastMood = 'calm'; gameOver = false; particles = []; popups = [];
   surviving = true;
   drawChart();
-  chart.data.datasets[0].data = prices.map(() => null);   // 圖表先清空，跟著時間慢慢畫出來
+  chart.data.datasets[0].data = prices.map(() => null);   // Clear the chart first, then draw it bit by bit over time
   chart.update();
   updateStats();
   document.getElementById('surviveStart').classList.add('hidden');
@@ -152,7 +152,7 @@ function startSurvival() {
   step = 0;
   onFinished = endSurvival;
   paused = false;
-  // 先倒數 3 秒，讓玩家準備好，再開始播
+  // Count down 3 seconds so the player is ready, then start playing
   countdownEnd = performance.now() + 3000;
   Tone.start().then(() => {
     if (crowdNoise.state !== 'started') crowdNoise.start();
@@ -166,7 +166,7 @@ function startSurvival() {
   }, 3000);
 }
 
-// 暫停／繼續
+// Pause / resume
 function togglePause() {
   if (!surviving || gameOver || loopId === null) return;
   paused = !paused;
@@ -175,17 +175,17 @@ function togglePause() {
 }
 document.getElementById('pauseBtn').addEventListener('click', togglePause);
 
-// 安全地播一個音效：音效出錯時只略過這個聲音，不影響遊戲
+// Play a sound safely: if a sound effect errors, skip just that sound without affecting the game
 function sfx(play) { try { play(); } catch (e) { console.warn('Sound skipped:', e.message); } }
 
-// ---------- 每走一步（由主程式的 updateScreen 呼叫） ----------
+// ---------- Every step (called from the main updateScreen) ----------
 function surviveStep(i) {
   if (!surviving || gameOver) return;
 
-  // 圖表只畫到現在
+  // The chart only draws up to now
   chart.data.datasets[0].data = prices.map((p, k) => (k <= i ? p : null));
 
-  // 算錢：上一步到這一步的價格變化 × 部位大小
+  // Money: price change from the last step to this one × position size
   if (lastIndex >= 0 && i > lastIndex) {
     const change = (prices[i] - prices[lastIndex]) * NOTIONAL * position;
     money += change;
@@ -205,12 +205,12 @@ function surviveStep(i) {
   }
   moneyHistory.push(money);
   lowestMoney = Math.min(lowestMoney, money);
-  // 你的操作有沒有「跟著音樂」：天堂時買、恐怖時賣、平靜時拿現金
+  // Did your moves "follow the music": buy in heaven, sell in horror, hold cash when calm
   const follow = { heaven: 1, horror: -1, calm: 0 }[moodAt(i)];
   if (position === follow) alignedSteps++;
   lastIndex = i;
 
-  // ===== 風暴預警：波動突然變大 → 警告玩家，問要不要開盾牌 =====
+  // ===== Storm warning: volatility suddenly jumps → warn the player and ask about the shield =====
   const level = warnLevel[i] || 0;
   if (level > lastWarn) {
     warningsSeen++;
@@ -218,14 +218,14 @@ function surviveStep(i) {
     const ratio = stormRatio[i].toFixed(1);
     if (position !== 0 && !shieldArmed) {
       if (document.getElementById('autoProtect').checked && shields > 0) {
-        armShield();                                          // 自動保護模式：直接幫你開盾牌
+        armShield();                                          // Auto-protect mode: turn the shield on for you
         warningsProtected++;
         popups.push({ text: '🤖 AUTO-PROTECT: shield on', color: '#7ec8ff', y: -60, life: 1.8 });
       } else {
-        promptUntil = performance.now() + 5000;               // 顯示 5 秒的「要不要保護？」提示
+        promptUntil = performance.now() + 5000;               // Show a "Protect?" prompt for 5 seconds
       }
     } else {
-      warningsProtected++;            // 已經開了盾牌，或手上是現金：本來就是安全的
+      warningsProtected++;            // Shield already on, or holding cash: already safe
     }
     popups.push({ text: (level === 2 ? '🔴 STORM WARNING ' : '🟡 STORM BREWING ') + ratio + '×',
                   color: level === 2 ? '#ff4d4f' : '#faad14', y: -100, life: 1.8 });
@@ -234,14 +234,14 @@ function surviveStep(i) {
   }
   lastWarn = level;
 
-  // 盾牌：這筆交易虧超過設定的金額 → 自動逃回現金
+  // Shield: this trade loses more than the set amount → automatically back to cash
   if (shieldArmed && position !== 0 && money < shieldBase - shieldLimit()) triggerShield(i);
   peakMoney = Math.max(peakMoney, money);
 
-  // 觀眾的音量跟著市場有多激烈
+  // Crowd volume follows how wild the market is
   crowdBase = 0.06 + storm[i] * 0.2;
 
-  // 「進球」：最近 5 步賺了 $800 以上 → 歡呼、汽笛、彩帶
+  // "Goal": made $800+ over the last 5 steps → cheering, air horn, confetti
   const gained = money - (moneyHistory[Math.max(0, moneyHistory.length - 6)] ?? START_MONEY);
   if (gained >= 800 && i - lastGoalStep > 8) {
     lastGoalStep = i;
@@ -254,7 +254,7 @@ function surviveStep(i) {
     crowdRoar(); hornBlast();
     narrate('goal', { gained: Math.round(gained), balance: Math.round(money), time: times[i] }, true);
   }
-  // 「失球」：最近 5 步賠了 $800 以上 → 觀眾「噢～」
+  // "Conceded": lost $800+ over the last 5 steps → crowd goes "ohhh~"
   if (gained <= -800 && i - lastGroanStep > 8) {
     lastGroanStep = i;
     popups.push({ text: 'OOOH! -$' + Math.round(-gained).toLocaleString(), color: '#ff4d4f', y: -40, life: 1.6, big: true });
@@ -263,13 +263,13 @@ function surviveStep(i) {
     narrate('losing', { lost: Math.round(-gained), balance: Math.round(money), time: times[i] }, true);
   }
 
-  // 暴衝：畫面上跳出大字
+  // Spike: big text pops up on screen
   if (spikes[i]) {
     popups.push({ text: (spikes[i] > 0 ? '⚡ SPIKE UP!' : '💥 CRASH!'),
                   color: spikes[i] > 0 ? '#f5c542' : '#ff4d4f', y: -30, life: 1.4 });
   }
 
-  // 播報員：情緒改變、暴衝、大賺的時候講話
+  // Narrator: talks on mood changes, spikes and big wins
   const pips = (prices[i] - prices[Math.max(0, i - 10)]) * 10000;
   const facts = { time: times[i], price: prices[i].toFixed(5), last10MinutesPips: Math.round(pips),
                   playerBalance: Math.round(money), playerPosition: ['short', 'cash', 'long'][position + 1] };
@@ -278,7 +278,7 @@ function surviveStep(i) {
   else if (money > START_MONEY * 1.3 && Math.random() < 0.05) narrate('bigWin', facts, false);
   lastMood = moodAt(i);
 
-  // 恐怖得很厲害時，偶爾有鬼跳出來
+  // When it's really scary, a ghost occasionally jumps out
   const now = performance.now();
   if (!document.getElementById('gentleMode').checked &&
       moodAt(i) === 'horror' && intensity[i] > 0.6 && now - lastGhost > 8000 && Math.random() < 0.15) {
@@ -286,11 +286,11 @@ function surviveStep(i) {
     sfx(() => {
       screamNoise.triggerAttackRelease('8n', Tone.now() + 0.02);
       screamTone.triggerAttackRelease(900, 0.5, Tone.now() + 0.02);
-      screamTone.frequency.exponentialRampTo(150, 0.5);      // 音高快速往下掉，像尖叫
+      screamTone.frequency.exponentialRampTo(150, 0.5);      // The pitch drops quickly, like a scream
     });
   }
 
-  // 輸光了
+  // Went broke
   if (money <= 0) {
     money = 0; gameOver = true;
     stop();
@@ -311,14 +311,14 @@ function endSurvival() {
   if (gameOver || !surviving) return;
   gameOver = true;
   const result = money - START_MONEY;
-  whistle(3, true);                            // 終場哨：嗶、嗶、嗶～～
+  whistle(3, true);                            // Final whistle: peep, peep, peeep~
   if (result > 0) { crowdRoar(); hornBlast(); } else crowdGroan();
   setTimeout(() => crowdGain.gain.rampTo(0, 2), 3000);
-  // 個人最佳紀錄
+  // Personal best
   const best = bestScore();
   const newBest = isNaN(best) || result > best;
   if (newBest) {
-    try { localStorage.setItem('ms_bestProfit', String(Math.round(result))); } catch (e) { /* 存不了就算了 */ }
+    try { localStorage.setItem('ms_bestProfit', String(Math.round(result))); } catch (e) { /* If it can't be saved, never mind */ }
     popups.push({ text: '🏆 NEW PERSONAL BEST!', color: '#f5c542', y: -80, life: 2.5, big: true });
   }
   narrate(newBest ? 'newBest' : result > 0 ? 'end' : 'endLoss',
@@ -330,7 +330,7 @@ function endSurvival() {
   setTimeout(() => showReport(matchStats(false)), 2500);
 }
 
-// 結束目前這筆交易，記到紀錄裡
+// Close the current trade and add it to the record
 function closeTrade() {
   if (position !== 0 && tradeStart) {
     trades.push({ side: position === 1 ? 'long' : 'short', from: tradeStart.time,
@@ -339,7 +339,7 @@ function closeTrade() {
   tradeStart = null;
 }
 
-// 整理這一局的數據，給賽後報告用
+// Collect this game's stats for the post-match report
 function matchStats(brokeOut) {
   const sorted = trades.slice().sort((a, b) => b.pnl - a.pnl);
   return {
@@ -363,31 +363,31 @@ function finishText(message) {
   button.classList.remove('hidden');
 }
 
-// ---------- 操作：買、賣、逃跑 ----------
+// ---------- Controls: buy, sell, run away ----------
 function setPosition(newPosition) {
   if (!surviving || gameOver || newPosition === position) return;
-  closeTrade();                                                     // 上一筆交易結束，記下來
-  if (position !== 0 || newPosition !== 0) money -= SWITCH_COST;   // 換方向要付一點手續費
+  closeTrade();                                                     // The previous trade has ended; record it
+  if (position !== 0 || newPosition !== 0) money -= SWITCH_COST;   // Changing direction costs a small fee
   position = newPosition;
   if (position !== 0) tradeStart = { money: money, time: times[Math.max(0, lastIndex)] };
-  if (shieldArmed) shieldBase = money;                              // 盾牌跟著新的交易重新計算
+  if (shieldArmed) shieldBase = money;                              // The shield is recalculated for the new trade
   updateStats();
-  // 播報員評論你的動作（球評在講球員）
+  // The narrator comments on your move (like a commentator on a player)
   const event = newPosition === 1 ? 'playerLong' : newPosition === -1 ? 'playerShort' : 'playerCash';
   narrate(event, { mood: moodAt(Math.max(0, lastIndex)), balance: Math.round(money) }, false);
 }
 
-// 開啟盾牌
+// Turn on the shield
 function armShield() {
   if (!surviving || gameOver || shieldArmed || shields <= 0) return;
   shields--; shieldArmed = true; shieldBase = money;
-  if (performance.now() < promptUntil) { warningsProtected++; promptUntil = 0; }   // 玩家聽了警告，開了盾牌
+  if (performance.now() < promptUntil) { warningsProtected++; promptUntil = 0; }   // The player heard the warning and turned on the shield
   popups.push({ text: '🛡 SHIELD ON (max loss $' + shieldLimit() + ')', color: '#7ec8ff', y: -20, life: 1.4 });
   sfx(() => clang.triggerAttackRelease('C4', '16n', Tone.now() + 0.02));
   updateStats();
 }
 
-// 盾牌擋下來了
+// The shield blocked a loss
 function triggerShield(i) {
   const saved = Math.round(shieldBase - money);
   shieldArmed = false;
@@ -400,7 +400,7 @@ function triggerShield(i) {
 
 document.getElementById('shieldBtn').addEventListener('click', armShield);
 
-// 不看螢幕也能玩：按 B 用語音唸出現在的狀況
+// Playable without looking at the screen: press B to hear the current status read aloud
 function speakStatus() {
   if (!surviving) return;
   const i = Math.max(0, lastIndex);
@@ -440,7 +440,7 @@ function updateStats() {
 }
 
 // =====================================================================
-// 畫交易員和特效（每秒約 60 次）
+// Draw the trader and effects (about 60 times a second)
 // =====================================================================
 function drawStage(t) {
   requestAnimationFrame(drawStage);
@@ -453,19 +453,19 @@ function drawStage(t) {
   const power = surviving && intensity.length ? intensity[i] : 0;
   const losing = money < START_MONEY;
 
-  // 恐怖時整個畫面會抖
+  // In horror the whole screen shakes
   const shake = mood === 'horror' ? power * 6 : 0;
   ctx.save();
   ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
 
-  // 背景：天堂 = 金色天空、恐怖 = 暗紅色、平穩 = 夜空
+  // Background: heaven = golden sky, horror = dark red, calm = night sky
   ctx.fillStyle = mood === 'heaven' ? '#3a3216' : mood === 'horror' ? '#2a0b0f' : '#141824';
   ctx.fillRect(-10, -10, W + 20, H + 20);
   ctx.fillStyle = '#20242e';
-  ctx.fillRect(-10, H - 30, W + 20, 40);              // 地板
+  ctx.fillRect(-10, H - 30, W + 20, 40);              // Floor
 
-  // 掉落物：天堂掉金幣、恐怖下紅雨
-  if (surviving && !gameOver && !paused && particles.length < 120) {   // 暫停時不再掉東西；數量有上限
+  // Falling items: coins in heaven, red rain in horror
+  if (surviving && !gameOver && !paused && particles.length < 120) {   // Nothing falls while paused; the count is capped
     const rate = mood === 'calm' ? 0 : 0.2 + power * 0.8;
     if (Math.random() < rate) {
       particles.push({ x: Math.random() * W, y: -10, vy: 60 + Math.random() * 80,
@@ -486,29 +486,29 @@ function drawStage(t) {
     }
   });
 
-  // 天堂時，旁邊有兩個小天使
+  // In heaven, two little angels hover nearby
   if (mood === 'heaven') {
     [W * 0.25, W * 0.75].forEach((x, k) => {
       const y = 50 + Math.sin(t / 300 + k) * 10;
       ctx.fillStyle = '#fff6d5';
-      ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI * 2); ctx.fill();          // 頭
+      ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI * 2); ctx.fill();          // Head
       ctx.strokeStyle = '#f5c542'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.ellipse(x, y - 16, 10, 3, 0, 0, Math.PI * 2); ctx.stroke();  // 光環
+      ctx.beginPath(); ctx.ellipse(x, y - 16, 10, 3, 0, 0, Math.PI * 2); ctx.stroke();  // Halo
       ctx.fillStyle = 'rgba(255,255,255,0.7)';
-      ctx.beginPath(); ctx.ellipse(x - 16, y + 4, 10, 5, -0.5, 0, Math.PI * 2); ctx.fill();  // 翅膀
+      ctx.beginPath(); ctx.ellipse(x - 16, y + 4, 10, 5, -0.5, 0, Math.PI * 2); ctx.fill();  // Wings
       ctx.beginPath(); ctx.ellipse(x + 16, y + 4, 10, 5, 0.5, 0, Math.PI * 2); ctx.fill();
     });
   }
 
   drawTrader(W / 2, H - 30, mood, power, losing, t);
 
-  // 「+$420」浮動文字
+  // Floating "+$420" text
   popups = popups.filter(p => p.life > 0);
   popups.forEach(p => {
     p.y += 40 * dt; p.life -= dt * 0.8;
     ctx.globalAlpha = Math.max(0, p.life);
     ctx.fillStyle = p.color;
-    if (p.big) {                                   // 進球、失球：大字置中
+    if (p.big) {                                   // Goal / conceded: big centred text
       ctx.font = 'bold ' + Math.round(Math.min(44, W / 11)) + 'px system-ui'; ctx.textAlign = 'center';
       ctx.fillText(p.text, W / 2, H / 2 - 20 - p.y * 0.3);
       ctx.textAlign = 'left';
@@ -520,7 +520,7 @@ function drawStage(t) {
     ctx.globalAlpha = 1;
   });
 
-  // 提示：告訴新手「現在的音樂代表什麼、可以怎麼做」
+  // Hints: tell beginners "what the music means now and what you can do"
   if (surviving && !gameOver && document.getElementById('hintsOn').checked && performance.now() > countdownEnd) {
     const hint = mood === 'heaven' ? '⬆ Rising → Buy'
                : mood === 'horror' ? '⬇ Falling → Sell'
@@ -531,10 +531,10 @@ function drawStage(t) {
     ctx.fillText(hint, 20, H - 50);
   }
 
-  // 計分板：像電視轉播右上角那樣
+  // Scoreboard: like the top-right corner of a TV broadcast
   if (surviving && lastIndex >= 0) drawScoreboard(W, t);
 
-  // 風暴預警 + 「要不要保護？」提示（左上角）
+  // Storm warning + "Protect?" prompt (top-left)
   const warn = surviving && !gameOver && lastIndex >= 0 ? warnLevel[lastIndex] : 0;
   if (warn > 0) {
     const flash = Math.floor(t / 400) % 2 === 0;
@@ -554,7 +554,7 @@ function drawStage(t) {
     }
   }
 
-  // 開局倒數
+  // Kick-off countdown
   const left = countdownEnd - performance.now();
   if (surviving && left > 0) {
     ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, W, H);
@@ -565,14 +565,14 @@ function drawStage(t) {
     ctx.textAlign = 'left';
   }
 
-  // 暫停畫面
+  // Pause screen
   if (paused) {
     ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = '#ffffff'; ctx.font = 'bold 40px system-ui'; ctx.textAlign = 'center';
     ctx.fillText('PAUSED', W / 2, H / 2); ctx.textAlign = 'left';
   }
 
-  // 輸光畫面
+  // Broke screen
   if (gameOver && money <= 0) {
     ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(0, 0, W, H);
     ctx.fillStyle = '#ff4d4f'; ctx.font = 'bold ' + Math.round(Math.min(44, W / 10)) + 'px system-ui'; ctx.textAlign = 'center';
@@ -583,11 +583,11 @@ function drawStage(t) {
   }
   ctx.restore();
 
-  // 鬼！（不跟著抖，直接蓋滿畫面）
+  // Ghost! (doesn't shake; covers the whole screen)
   if (performance.now() < ghostUntil) drawGhost(W, H);
 }
 
-// 計分板：只留「LIVE + 時間 + 進度」，錢和盾牌已經在右邊的大卡片上了
+// Scoreboard: only "LIVE + time + progress" — money and shields are already on the big cards to the right
 function drawScoreboard(W, t) {
   ctx.font = 'bold 16px system-ui';
   const text = times[lastIndex] + '  ·  ' + (lastIndex + 1) + '/' + prices.length;
@@ -601,59 +601,59 @@ function drawScoreboard(W, t) {
   if (streak >= 3) { ctx.fillStyle = '#ff9f1c'; ctx.fillText('🔥 ' + streak, x - 54, y + 22); }
 }
 
-// 畫一個像素風的交易員
+// Draw a pixel-art trader
 function drawTrader(x, ground, mood, power, losing, t) {
   let bob = 0, jitter = 0, armsUp = false;
   if (mood === 'heaven') { bob = Math.abs(Math.sin(t / (220 - power * 100))) * (8 + power * 10); armsUp = true; }
   if (mood === 'horror') jitter = (Math.random() - 0.5) * (2 + power * 6);
   const cx = x + jitter, top = ground - 90 - bob;
 
-  ctx.fillStyle = '#1f3a6e'; ctx.fillRect(cx - 9, ground - 30 - bob, 7, 30 + bob);   // 腿
+  ctx.fillStyle = '#1f3a6e'; ctx.fillRect(cx - 9, ground - 30 - bob, 7, 30 + bob);   // Legs
   ctx.fillRect(cx + 2, ground - 30 - bob, 7, 30 + bob);
-  ctx.fillStyle = '#2b4c8c'; ctx.fillRect(cx - 18, top + 30, 36, 32);                 // 西裝
-  ctx.fillStyle = '#ffffff'; ctx.fillRect(cx - 5, top + 30, 10, 14);                  // 襯衫
-  ctx.fillStyle = '#d93a3a'; ctx.fillRect(cx - 2, top + 32, 4, 16);                   // 領帶
+  ctx.fillStyle = '#2b4c8c'; ctx.fillRect(cx - 18, top + 30, 36, 32);                 // Suit
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(cx - 5, top + 30, 10, 14);                  // Shirt
+  ctx.fillStyle = '#d93a3a'; ctx.fillRect(cx - 2, top + 32, 4, 16);                   // Tie
 
-  ctx.fillStyle = '#2b4c8c';                                                          // 手
+  ctx.fillStyle = '#2b4c8c';                                                          // Hands
   if (armsUp) {
     ctx.fillRect(cx - 30, top + 6, 8, 30); ctx.fillRect(cx + 22, top + 6, 8, 30);
   } else if (mood === 'horror') {
-    ctx.fillRect(cx - 26, top + 12, 8, 24); ctx.fillRect(cx + 18, top + 12, 8, 24);   // 抱頭
+    ctx.fillRect(cx - 26, top + 12, 8, 24); ctx.fillRect(cx + 18, top + 12, 8, 24);   // Hands on head
   } else {
     ctx.fillRect(cx - 26, top + 32, 8, 26); ctx.fillRect(cx + 18, top + 32, 8, 26);
   }
 
-  ctx.fillStyle = mood === 'horror' ? '#d9e3c4' : '#f1c9a0';                          // 頭（嚇到臉色發青）
+  ctx.fillStyle = mood === 'horror' ? '#d9e3c4' : '#f1c9a0';                          // Head (green with fright)
   ctx.fillRect(cx - 15, top, 30, 30);
-  ctx.fillStyle = '#3b2a1a'; ctx.fillRect(cx - 15, top - 4, 30, 8);                   // 頭髮
+  ctx.fillStyle = '#3b2a1a'; ctx.fillRect(cx - 15, top - 4, 30, 8);                   // Hair
 
-  ctx.fillStyle = '#111';                                                              // 眼睛
+  ctx.fillStyle = '#111';                                                              // Eyes
   const eye = mood === 'horror' ? 4 : 3;
   ctx.fillRect(cx - 8, top + 10, eye, eye); ctx.fillRect(cx + 5, top + 10, eye, eye);
 
-  // 嘴巴：天堂大笑、恐怖張大嘴、平穩看有沒有在賠錢
+  // Mouth: big grin in heaven, wide open in horror, when calm depends on whether you're losing
   if (mood === 'heaven') { ctx.fillRect(cx - 7, top + 20, 14, 3); ctx.fillRect(cx - 8, top + 18, 2, 3); ctx.fillRect(cx + 6, top + 18, 2, 3); }
   else if (mood === 'horror') ctx.fillRect(cx - 4, top + 18, 8, 8);
   else if (losing) { ctx.fillRect(cx - 7, top + 22, 14, 2); ctx.fillRect(cx - 8, top + 24, 2, 2); ctx.fillRect(cx + 6, top + 24, 2, 2); }
   else ctx.fillRect(cx - 6, top + 21, 12, 2);
 
-  if (mood === 'horror') {                                                             // 冷汗
+  if (mood === 'horror') {                                                             // Cold sweat
     ctx.fillStyle = '#7ec8ff';
     const drop = (t / 6) % 30;
     ctx.fillRect(cx + 16, top + 4 + drop, 3, 5); ctx.fillRect(cx - 19, top + 10 + (drop + 12) % 30, 3, 5);
   }
-  if (losing && money < START_MONEY * 0.6) {                                           // 賠很多：眼淚
+  if (losing && money < START_MONEY * 0.6) {                                           // Losing a lot: tears
     ctx.fillStyle = '#7ec8ff';
     ctx.fillRect(cx - 8, top + 14 + (t / 10) % 12, 2, 4); ctx.fillRect(cx + 6, top + 14 + (t / 10 + 6) % 12, 2, 4);
   }
 
-  // 頭上的部位標示
+  // Position marker above the head
   ctx.font = '20px system-ui'; ctx.textAlign = 'center';
   ctx.fillText(position === 1 ? '📈' : position === -1 ? '📉' : '💵', cx, top - 12);
   ctx.textAlign = 'left';
 }
 
-// 跳出來嚇人的鬼
+// Ghost that jumps out to scare you
 function drawGhost(W, H) {
   ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#f4f4f4';
