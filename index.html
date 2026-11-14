@@ -318,7 +318,11 @@ function analyse() {
   const median = [...raw].sort((a, b) => a - b)[Math.floor(raw.length / 2)];
   storm = raw.map(v => Math.pow(Math.max(0, (v - median) / (top - median || 1)), 0.6));
 
-  // --- 暴衝：這一步的變化超過「一般一步變化」的 5 倍 ---
+  computeSpikes();
+}
+
+// --- 暴衝：這一步的變化超過「這段資料一般一步變化」的 5 倍 ---
+function computeSpikes() {
   const steps = prices.map((p, i) => (i === 0 ? 0 : p - prices[i - 1]));
   const sortedSteps = steps.map(Math.abs).sort((a, b) => a - b);
   const normalStep = sortedSteps[Math.floor(sortedSteps.length / 2)] || 1e-9;
@@ -668,6 +672,10 @@ function pickSegment() {
       const cut = arr => arr.slice(start, start + SEGMENT);
       prices = cut(prices); ranges = cut(ranges); times = cut(times);
       moods = cut(moods); intensity = cut(intensity); storm = cut(storm);
+      // 暴衝：要同時「以整天來看很大」和「以這一段來看也很大」才算，免得劇烈時段一直響
+      const dayWide = cut(spikes);
+      computeSpikes();
+      spikes = spikes.map((value, k) => (dayWide[k] ? value : 0));
       return target;
     }
   }

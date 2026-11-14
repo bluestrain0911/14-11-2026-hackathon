@@ -56,6 +56,7 @@ function startSurvival() {
   const cut = arr => arr.slice(start, start + GAME_STEPS);
   prices = cut(prices); ranges = cut(ranges); times = cut(times);
   moods = cut(moods); intensity = cut(intensity); storm = cut(storm);
+  computeSpikes();     // 暴衝用「這一局」的標準重新算，不然風暴時段會一直響
 
   money = START_MONEY; peakMoney = START_MONEY; position = 0; lastIndex = -1;
   lastMood = 'calm'; gameOver = false; particles = []; popups = [];
