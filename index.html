@@ -52,6 +52,35 @@
   <div class="tabs">
     <button id="replayTab" class="active">Replay</button>
     <button id="gameTab">Guess game</button>
+    <button id="surviveTab">Survive the storm</button>
+  </div>
+
+  <!-- 生存模式：交易員小遊戲 -->
+  <div id="survivePanel" class="game hidden">
+    <canvas id="stage" width="720" height="240" style="width:100%; border-radius:10px; display:block;"></canvas>
+    <div class="info" style="grid-template-columns: repeat(3, 1fr); margin-top: 12px;">
+      <div class="card">Money<b id="moneyText">$10,000</b></div>
+      <div class="card">Profit<b id="profitText">+$0</b></div>
+      <div class="card">Position<b id="positionText">💵 Cash (safe)</b></div>
+    </div>
+    <div class="answers">
+      <button id="buyBtn" style="background:#b8901c">⬆ Buy (W)</button>
+      <button id="cashBtn" style="background:#4a5263">💵 Cash (Space)</button>
+      <button id="sellBtn" style="background:#b3262a">⬇ Sell (S)</button>
+      <button id="surviveStart">▶ Start trading</button>
+    </div>
+    <div id="surviveMessage" class="feedback">You have $10,000. Each pip the euro moves = $100. Listen to the music: heaven means rising, horror means falling. Don't go broke!</div>
+    <div id="narratorText" class="feedback" style="color:#f5c542; margin-top:8px;"></div>
+    <details style="margin-top:12px; color:#9aa0a6;">
+      <summary>🎙 Narrator settings (optional Gemini / ElevenLabs keys)</summary>
+      <p style="font-size:13px;">Without keys the narrator uses built-in lines and your browser's voice. Keys stay in this browser only — never put them in the code or on GitHub.</p>
+      <label><input id="narratorOn" type="checkbox" checked> Narrator on</label><br><br>
+      <label>Gemini API key <input id="geminiKey" type="password" size="30"></label>
+      <label>Model <input id="geminiModel" value="gemini-2.5-flash" size="18"></label><br><br>
+      <label>ElevenLabs API key <input id="elevenKey" type="password" size="30"></label>
+      <label>Voice ID <input id="elevenVoice" value="21m00Tcm4TlvDq8ikWAM" size="22"></label><br><br>
+      <button id="testNarrator">Test narrator</button>
+    </details>
   </div>
 
   <div class="chart-box">
@@ -439,6 +468,8 @@ const MOOD_STYLE = {
 };
 
 function updateScreen(i) {
+  if (typeof surviving !== 'undefined' && surviving) surviveStep(i);   // 生存模式：算錢、播報、特效
+
   const marker = prices.map(() => null);
   marker[i] = prices[i];
   chart.data.datasets[1].data = marker;
@@ -613,17 +644,23 @@ document.getElementById('startRoundBtn').addEventListener('click', startRound);
 document.getElementById('replayRoundBtn').addEventListener('click', () => { stop(); step = 0; play(); });
 
 // ---------- 10. 切換模式 ----------
-function showMode(game) {
+//   'replay'：回放、'game'：猜漲跌、'survive'：生存遊戲
+function showMode(mode) {
   stop();
-  document.getElementById('replayTab').classList.toggle('active', !game);
-  document.getElementById('gameTab').classList.toggle('active', game);
-  document.getElementById('gamePanel').classList.toggle('hidden', !game);
-  document.getElementById('replayControls').classList.toggle('hidden', game);
-  document.getElementById('infoCards').classList.toggle('hidden', game);
-  document.querySelector('.meter').classList.toggle('hidden', game);
+  surviving = false;
+  onFinished = null;
+  ['replay', 'game', 'survive'].forEach(name =>
+    document.getElementById(name + 'Tab').classList.toggle('active', name === mode));
+  document.getElementById('gamePanel').classList.toggle('hidden', mode !== 'game');
+  document.getElementById('survivePanel').classList.toggle('hidden', mode !== 'survive');
+  document.getElementById('replayControls').classList.toggle('hidden', mode !== 'replay');
+  document.getElementById('infoCards').classList.toggle('hidden', mode !== 'replay');
+  document.querySelector('.meter').classList.toggle('hidden', mode !== 'replay');
   document.getElementById('cover').classList.add('hidden');
   hideAnswer = false;
-  if (game) {
+  document.body.style.background = '#0f1115';
+
+  if (mode === 'game') {
     round = 0; score = 0; answer = null;
     document.getElementById('startRoundBtn').textContent = '▶ Start game';
     document.getElementById('startRoundBtn').classList.remove('hidden');
@@ -632,15 +669,22 @@ function showMode(game) {
       'You will hear 30 minutes of real EUR/USD trading as music. Rising sounds like heaven, falling like a horror film.';
     updateRoundText();
     document.getElementById('cover').classList.remove('hidden');
+  } else if (mode === 'survive') {
+    document.getElementById('surviveStart').textContent = '▶ Start trading';
+    document.getElementById('surviveStart').classList.remove('hidden');
   } else {
     loadData(datasets[document.getElementById('datasetSelect').value]);
   }
 }
-document.getElementById('replayTab').addEventListener('click', () => showMode(false));
-document.getElementById('gameTab').addEventListener('click', () => showMode(true));
+document.getElementById('replayTab').addEventListener('click', () => showMode('replay'));
+document.getElementById('gameTab').addEventListener('click', () => showMode('game'));
+document.getElementById('surviveTab').addEventListener('click', () => showMode('survive'));
 
 // 一打開網頁就載入第一份資料
 loadData(datasets[Object.keys(datasets)[0]]);
 </script>
+<!-- 播報員和生存遊戲放在另外兩個檔案（要和 index.html 放在同一個資料夾） -->
+<script src="narrator.js"></script>
+<script src="survive.js"></script>
 </body>
 </html>
