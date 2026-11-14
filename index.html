@@ -45,6 +45,11 @@
       <option value="storm">Zoom: biggest storm</option>
       <option value="day">Whole day</option>
     </select>
+    <select id="speedSelect">
+      <option value="4">Speed: very slow</option>
+      <option value="2" selected>Speed: slow</option>
+      <option value="1">Speed: fast</option>
+    </select>
     <label>Load CSV <input id="fileInput" type="file" accept=".csv"></label>
   </div>
 
@@ -181,10 +186,12 @@ function analyse() {
   let state = 'calm', pending = 0, startIndex = 0;
 
   prices.forEach((p, i) => {
-    const from = Math.max(0, i - W);
-    const net = p - prices[from];
+    // 視窗「以現在為中心」：往前看 6 步、往後看 6 步。
+    // 因為播的是歷史資料，未來幾步其實已經知道了，這樣音樂就能在趨勢「剛開始」時就切換，不會慢半拍。
+    const from = Math.max(0, i - W / 2), to = Math.min(prices.length - 1, i + W / 2);
+    const net = prices[to] - prices[from];
     let path = 0;
-    for (let k = from + 1; k <= i; k++) path += Math.abs(prices[k] - prices[k - 1]);
+    for (let k = from + 1; k <= to; k++) path += Math.abs(prices[k] - prices[k - 1]);
     const consistency = path ? net / path : 0;
 
     // 這一步「想要」變成什麼情緒
@@ -210,6 +217,9 @@ function analyse() {
       intensity.push(0.6 * distance + 0.4 * duration);
     }
   });
+  // 「連續 3 步才切換」會讓切換晚 3 步，這裡把結果整體往前挪 3 步抵消掉
+  moods = moods.slice(CONFIRM).concat(Array(CONFIRM).fill(moods[moods.length - 1]));
+  intensity = intensity.slice(CONFIRM).concat(Array(CONFIRM).fill(intensity[intensity.length - 1]));
 
   // --- 風暴：振幅。有最高/最低價就用它，否則用前後兩筆的價差 ---
   const changes = prices.map((p, i) =>
@@ -367,7 +377,9 @@ function onTick(time) {
   const i = step;
   Tone.Draw.schedule(() => updateScreen(i), time);
 
-  step++;
+  // 每隔幾個 16 分音符才前進一筆資料（越大，橘點走得越慢）
+  const every = Number(document.getElementById('speedSelect').value);
+  if (tick % every === every - 1) step++;
   tick = (tick + 1) % 16;
 }
 
