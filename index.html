@@ -28,6 +28,20 @@
   .card b { display: block; color: #e8e8e8; font-size: 20px; margin-top: 4px; }
   .meter { height: 10px; background: #2a2e36; border-radius: 5px; overflow: hidden; margin-top: 16px; }
   .meter div { height: 100%; width: 0%; background: #3ecf8e; transition: width 0.2s, background 0.2s; }
+  .tabs { display: flex; gap: 8px; margin: 12px 0; }
+  .tabs button { background: #262a33; }
+  .tabs button.active { background: #2b6cff; }
+  .chart-box { position: relative; }
+  .cover { position: absolute; inset: 0; border-radius: 12px; background: #171a21;
+           display: flex; flex-direction: column; align-items: center; justify-content: center;
+           text-align: center; font-size: 22px; color: #e8e8e8; }
+  .cover small { color: #9aa0a6; font-size: 14px; margin-top: 8px; }
+  .game { background: #171a21; border-radius: 12px; padding: 16px; margin: 16px 0; }
+  .game .answers { display: flex; gap: 10px; margin: 12px 0; flex-wrap: wrap; }
+  .game .answers button { font-size: 18px; padding: 12px 20px; }
+  #answerUp { background: #b8901c; } #answerFlat { background: #4a5263; } #answerDown { background: #b3262a; }
+  .feedback { font-size: 18px; min-height: 26px; }
+  .hidden { display: none !important; }
 </style>
 </head>
 
@@ -35,9 +49,33 @@
   <h1>Market Symphony</h1>
   <p class="subtitle">Hear the market: rising prices sound like heaven, falling prices sound like a horror film</p>
 
-  <div class="chart-box"><canvas id="chart" height="120"></canvas></div>
+  <div class="tabs">
+    <button id="replayTab" class="active">Replay</button>
+    <button id="gameTab">Guess game</button>
+  </div>
 
-  <div class="controls">
+  <div class="chart-box">
+    <canvas id="chart" height="120"></canvas>
+    <!-- 遊戲時蓋住圖表，只能用聽的 -->
+    <div id="cover" class="cover hidden">Listen…<small>Is the market rising, flat or falling?</small></div>
+  </div>
+
+  <!-- 遊戲面板 -->
+  <div id="gamePanel" class="game hidden">
+    <div id="roundText">Round 1 / 5 · Score 0</div>
+    <div class="answers">
+      <button id="answerUp">⬆ Rising</button>
+      <button id="answerFlat">➡ Flat</button>
+      <button id="answerDown">⬇ Falling</button>
+    </div>
+    <div id="feedback" class="feedback"></div>
+    <div class="answers">
+      <button id="startRoundBtn">▶ Start game</button>
+      <button id="replayRoundBtn" class="hidden">↺ Hear it again</button>
+    </div>
+  </div>
+
+  <div class="controls" id="replayControls">
     <button id="playBtn">▶ Play</button>
     <button id="stopBtn" disabled>■ Stop</button>
     <button id="restartBtn">↺ Restart</button>
@@ -55,7 +93,7 @@
     <label>Load CSV <input id="fileInput" type="file" accept=".csv"></label>
   </div>
 
-  <div class="info">
+  <div class="info" id="infoCards">
     <div class="card">Time<b id="timeText">-</b></div>
     <div class="card">Price<b id="priceText">-</b></div>
     <div class="card">Mood<b id="keyText">-</b></div>
@@ -315,7 +353,13 @@ let mood = 'calm', power = 0, wind = 0;   // 這一小節的情緒、強度、�
 let chord = [60, 64, 67];                 // 這一小節的和弦
 
 function onTick(time) {
-  if (step >= prices.length) { Tone.Draw.schedule(stop, time); return; }
+  if (step >= prices.length) {
+    if (!finishing) {
+      finishing = true;
+      Tone.Draw.schedule(() => { stop(); if (onFinished) onFinished(); }, time);
+    }
+    return;
+  }
 
   // ===== 決定情緒，並彈出長音 =====
   // 每一小節的開頭會重新彈一次；如果情緒在小節中間變了，就在下一拍（最多等 3 步）立刻切換，
@@ -400,6 +444,8 @@ function updateScreen(i) {
   chart.data.datasets[1].data = marker;
   chart.update();
 
+  if (hideAnswer) return;   // 遊戲中：不能讓畫面洩漏答案
+
   const style = MOOD_STYLE[moods[i]];
   document.body.style.background = style.background;     // 背景顏色跟著情緒變
   const moodText = document.getElementById('keyText');
@@ -418,11 +464,14 @@ function updateScreen(i) {
 
 // ---------- 7. 按鈕 ----------
 let loopId = null;
+let finishing = false;      // 播完時只觸發一次「結束」
+let onFinished = null;      // 播完後要做的事（遊戲會用到）
 
 async function play() {
   await Tone.start();                       // 瀏覽器規定要使用者按下按鈕才能發聲
   if (step >= prices.length) step = 0;
   tick = 0;
+  finishing = false;
   Tone.Transport.bpm.value = 76;
   loopId = Tone.Transport.scheduleRepeat(onTick, '16n');
   Tone.Transport.start();
@@ -433,6 +482,7 @@ async function play() {
 function stop() {
   Tone.Transport.stop();
   if (loopId !== null) { Tone.Transport.clear(loopId); loopId = null; }
+  pad.releaseAll(); drone.releaseAll(); eerie.triggerRelease();   // 把還在響的長音關掉
   document.getElementById('playBtn').disabled = false;
   document.getElementById('stopBtn').disabled = true;
 }
@@ -473,6 +523,121 @@ Object.keys(datasets).forEach(addOption);
 
 document.getElementById('datasetSelect').addEventListener('change', e => loadData(datasets[e.target.value]));
 document.getElementById('viewSelect').addEventListener('change', () => loadData(full));
+
+// ---------- 9. 遊戲模式：用聽的猜漲跌 ----------
+// 每一回合：從真實資料裡隨機挑一段「很明顯在漲／平穩／在跌」的 30 分鐘，
+// 蓋住圖表只播音樂，玩家猜市場在做什麼，猜完揭曉圖表。
+const ROUNDS = 5;
+const SEGMENT = 30;          // 每回合播幾步（幾分鐘的資料）
+let hideAnswer = false;      // true = 遊戲進行中，畫面不顯示任何提示
+let round = 0, score = 0, answer = null, answered = false;
+
+const realNames = () => Object.keys(datasets).filter(name => !name.startsWith('Demo'));
+
+// 挑一段答案很明確的資料
+function pickSegment() {
+  const targets = ['heaven', 'calm', 'horror'];
+  const target = targets[Math.floor(Math.random() * 3)];   // 先決定這回合的答案
+  for (let tries = 0; tries < 300; tries++) {
+    const names = realNames();
+    const data = datasets[names[Math.floor(Math.random() * names.length)]];
+
+    // 用「整天」的資料分析情緒（這樣判斷標準跟整天一致），再切出其中一段
+    prices = data.c.slice(); ranges = data.h.map((h, k) => h - data.l[k]); times = data.t.slice();
+    analyse();
+    const start = Math.floor(Math.random() * (prices.length - SEGMENT));
+    const part = moods.slice(start, start + SEGMENT);
+    const share = part.filter(m => m === target).length / SEGMENT;
+    // 價格本身也要跟答案一致：天堂要真的有漲、恐怖要真的有跌、平穩的淨變動要很小
+    const net = (prices[start + SEGMENT - 1] - prices[start]) / prices[start];
+    const priceAgrees = target === 'heaven' ? net > 0.00004
+                      : target === 'horror' ? net < -0.00004
+                      : Math.abs(net) < 0.00025;
+    if (priceAgrees && share >= (target === 'calm' ? 0.85 : 0.65)) {
+      const cut = arr => arr.slice(start, start + SEGMENT);
+      prices = cut(prices); ranges = cut(ranges); times = cut(times);
+      moods = cut(moods); intensity = cut(intensity); storm = cut(storm);
+      return target;
+    }
+  }
+  return null;
+}
+
+function updateRoundText() {
+  document.getElementById('roundText').textContent =
+    'Round ' + Math.min(round, ROUNDS) + ' / ' + ROUNDS + ' · Score ' + score;
+}
+
+function startRound() {
+  if (round >= ROUNDS) { round = 0; score = 0; }   // 玩完了就重新開始
+  round++;
+  answer = pickSegment();
+  if (!answer) { document.getElementById('feedback').textContent = 'Could not find a clear segment, try again.'; return; }
+  answered = false;
+  hideAnswer = true;
+  step = 0;
+  drawChart();
+  document.body.style.background = '#0f1115';
+  document.getElementById('cover').classList.remove('hidden');
+  document.getElementById('feedback').textContent = 'Listen, then choose an answer.';
+  document.getElementById('startRoundBtn').classList.add('hidden');
+  document.getElementById('replayRoundBtn').classList.remove('hidden');
+  updateRoundText();
+  onFinished = null;
+  play();
+}
+
+const ANSWER_TEXT = { heaven: 'rising (heaven)', calm: 'flat (calm)', horror: 'falling (horror)' };
+
+function guess(choice) {
+  if (answered || !answer) return;
+  answered = true;
+  stop();
+  if (choice === answer) score++;
+  hideAnswer = false;
+  document.getElementById('cover').classList.add('hidden');   // 揭曉圖表
+  document.getElementById('feedback').textContent =
+    (choice === answer ? '✅ Correct! ' : '❌ Not quite. ') +
+    'The market was ' + ANSWER_TEXT[answer] + ' — ' + times[0] + ' to ' + times[times.length - 1] + '.';
+  updateRoundText();
+  const button = document.getElementById('startRoundBtn');
+  button.textContent = round >= ROUNDS ? '▶ Play again (final score ' + score + ' / ' + ROUNDS + ')' : '▶ Next round';
+  button.classList.remove('hidden');
+  document.getElementById('replayRoundBtn').classList.add('hidden');
+}
+
+document.getElementById('answerUp').addEventListener('click', () => guess('heaven'));
+document.getElementById('answerFlat').addEventListener('click', () => guess('calm'));
+document.getElementById('answerDown').addEventListener('click', () => guess('horror'));
+document.getElementById('startRoundBtn').addEventListener('click', startRound);
+document.getElementById('replayRoundBtn').addEventListener('click', () => { stop(); step = 0; play(); });
+
+// ---------- 10. 切換模式 ----------
+function showMode(game) {
+  stop();
+  document.getElementById('replayTab').classList.toggle('active', !game);
+  document.getElementById('gameTab').classList.toggle('active', game);
+  document.getElementById('gamePanel').classList.toggle('hidden', !game);
+  document.getElementById('replayControls').classList.toggle('hidden', game);
+  document.getElementById('infoCards').classList.toggle('hidden', game);
+  document.querySelector('.meter').classList.toggle('hidden', game);
+  document.getElementById('cover').classList.add('hidden');
+  hideAnswer = false;
+  if (game) {
+    round = 0; score = 0; answer = null;
+    document.getElementById('startRoundBtn').textContent = '▶ Start game';
+    document.getElementById('startRoundBtn').classList.remove('hidden');
+    document.getElementById('replayRoundBtn').classList.add('hidden');
+    document.getElementById('feedback').textContent =
+      'You will hear 30 minutes of real EUR/USD trading as music. Rising sounds like heaven, falling like a horror film.';
+    updateRoundText();
+    document.getElementById('cover').classList.remove('hidden');
+  } else {
+    loadData(datasets[document.getElementById('datasetSelect').value]);
+  }
+}
+document.getElementById('replayTab').addEventListener('click', () => showMode(false));
+document.getElementById('gameTab').addEventListener('click', () => showMode(true));
 
 // 一打開網頁就載入第一份資料
 loadData(datasets[Object.keys(datasets)[0]]);
