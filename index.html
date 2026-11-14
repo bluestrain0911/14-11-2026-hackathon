@@ -52,20 +52,22 @@
   <h1>Market Symphony</h1>
   <p class="subtitle">Hear the market: rising prices sound like heaven, falling prices sound like a horror film</p>
 
-  <details open class="game" style="margin:12px 0; padding:12px 16px;">
+  <details open class="game" style="margin:12px 0; padding:10px 16px;">
     <summary style="cursor:pointer; font-weight:600;">🎧 How to listen</summary>
-    <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:8px 24px; margin-top:10px; font-size:14px; line-height:1.5;">
-      <div><b style="color:#f5c542">Music style = direction.</b> Heaven (choir + rising bells) = EUR is rising against USD. Calm = flat. Horror (low drone + heartbeat) = EUR is falling.</div>
-      <div><b style="color:#7ec8ff">Speed + cymbals = volatility.</b> The faster it plays and the more cymbals you hear, the more violently the price is moving.</div>
-      <div><b style="color:#3ecf8e">Pitch, heartbeat, layers = trend strength.</b> A strong rally climbs higher with denser bells; a deep sell-off has a faster heartbeat.</div>
-      <div><b style="color:#ff6b6b">Sound effects = sudden spikes.</b> Whoosh + ding = jumped up in one minute. Whoosh + boom = crashed. Thunder = a huge spike.</div>
-      <div><b>Quick reversals:</b> a short "beep-beep" going up or down = the price briefly jumped against the trend (the line turns that colour for a moment, the music keeps the trend).</div>
-      <div><b>Line colours:</b> <span style="color:#f5c542">gold = rising</span> · <span style="color:#ff4d4f">red = falling</span> ·
-        <span style="color:#b37feb">purple = big jumps but no clear direction</span> · <span style="color:#8a93a6">grey = calm</span></div>
+    <div style="display:flex; flex-wrap:wrap; gap:6px 18px; margin-top:8px; font-size:14px;">
+      <span><b style="color:#f5c542">😇 Heaven</b> = rising</span>
+      <span><b style="color:#cfd6e4">😌 Calm</b> = flat</span>
+      <span><b style="color:#ff6b6b">👻 Horror</b> = falling</span>
+      <span>🥁 Faster = more volatile</span>
+      <span>⚡ Ding = spike up</span>
+      <span>💥 Boom = crash</span>
+      <span>🔁 Beep-beep = quick reversal</span>
+      <span><span style="color:#b37feb">■</span> Purple line = jumpy, no direction</span>
     </div>
-    <p style="font-size:13px; color:#9aa0a6; margin:10px 0 0;">The music describes the <b>market</b>, not your profit: going long earns when EUR rises, going short earns when it falls.
-      Data: SGX FX EUR/USD 1-month forward, 1-minute bars, replayed from history.</p>
-    <label style="font-size:14px; display:block; margin-top:8px;"><input id="gentleMode" type="checkbox"> Gentle mode (no jump scares, softer horror)</label>
+    <div style="font-size:12px; color:#9aa0a6; margin-top:6px;">
+      Music shows the market (EUR vs USD), not your profit · Data: SGX FX EUR/USD, 1-minute
+      · <label><input id="gentleMode" type="checkbox"> Gentle mode (no jump scares)</label>
+    </div>
   </details>
 
   <div class="tabs">
