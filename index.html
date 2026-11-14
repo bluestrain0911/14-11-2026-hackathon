@@ -617,7 +617,13 @@ const JUMP_DOWN_COLOR = '#eb2f96';   // 粉紅色：劇烈跳動中的急跌
 // 「現在的情緒」：即時模式用包含急轉彎的版本（每一步要等好幾秒，不怕音樂跳來跳去），
 // 回放和遊戲用平滑的版本（一秒好幾步，不平滑的話音樂會一直亂切）
 function moodAt(i) {
-  return (typeof liveActive !== 'undefined' && liveActive) ? (lineMoods[i] || moods[i]) : moods[i];
+  if (!(typeof liveActive !== 'undefined' && liveActive)) return moods[i];
+  const mood = lineMoods[i] || moods[i];
+  // 即時模式：劇烈跳動（圖上綠色／粉紅色）時，音樂也跟著剛剛那一下的方向走，不再播平靜的音樂
+  if (mood === 'calm' && i > 0 && (spikes[i] || (storm[i] || 0) > 0.35)) {
+    return prices[i] >= prices[i - 1] ? 'heaven' : 'horror';
+  }
+  return mood;
 }
 
 function lineColor(k) {
