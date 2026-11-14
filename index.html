@@ -42,6 +42,9 @@
   #answerUp { background: #b8901c; } #answerFlat { background: #4a5263; } #answerDown { background: #b3262a; }
   .feedback { font-size: 18px; min-height: 26px; }
   .hidden { display: none !important; }
+  .spike { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); padding: 8px 16px;
+           border-radius: 10px; font-size: 22px; font-weight: 700; opacity: 0; transition: opacity 0.6s; pointer-events: none; }
+  .spike.show { opacity: 1; transition: none; }
 </style>
 </head>
 
@@ -94,6 +97,8 @@
 
   <div class="chart-box">
     <canvas id="chart" height="120"></canvas>
+    <!-- 暴衝時閃一下的提示 -->
+    <div id="spikeFlash" class="spike"></div>
     <!-- 遊戲時蓋住圖表，只能用聽的 -->
     <div id="cover" class="cover hidden">Listen…<small>Is the market rising, flat or falling?</small></div>
   </div>
@@ -247,6 +252,8 @@ function loadData(d) {
 // intensity：情緒有多強烈（0～1）。漲/跌得越多、而且持續越久，數字越大，音效就越深。
 // storm：最近幾筆的「振幅」（最高價 - 最低價）有多大（0～1），用來加鼓和加快速度。
 let moods = [], intensity = [], storm = [];
+// spikes：一分鐘內突然暴漲或暴跌的時刻。0 = 沒有；正數 = 暴漲；負數 = 暴跌（數字 = 漲跌了幾 pip）
+let spikes = [];
 
 function analyse() {
   // --- 情緒：看「最近 12 步」是不是一路往同一個方向走 ---
@@ -310,6 +317,13 @@ function analyse() {
   // 以「中位數」當作平靜，最劇烈的時候當作 1；開 0.6 次方讓中等波動也聽得出來
   const median = [...raw].sort((a, b) => a - b)[Math.floor(raw.length / 2)];
   storm = raw.map(v => Math.pow(Math.max(0, (v - median) / (top - median || 1)), 0.6));
+
+  // --- 暴衝：這一步的變化超過「一般一步變化」的 5 倍 ---
+  const steps = prices.map((p, i) => (i === 0 ? 0 : p - prices[i - 1]));
+  const sortedSteps = steps.map(Math.abs).sort((a, b) => a - b);
+  const normalStep = sortedSteps[Math.floor(sortedSteps.length / 2)] || 1e-9;
+  spikes = steps.map(change => (Math.abs(change) > 5 * normalStep ? change * 10000 : 0));
+  spikeScale = normalStep * 10000;
 }
 
 // ---------- 3. 畫圖 ----------
@@ -382,6 +396,53 @@ function chordAt(root, base) {
   });
 }
 const midi = n => Tone.Frequency(n, 'midi').toNote();   // MIDI 編號 → 音名，例如 64 → "E4"
+
+// ---------- 5.5 暴衝音效 ----------
+// 暴漲：「咻～」往上衝 + 「叮！」
+// 暴跌：炸彈掉下來的「咻～～」往下 + 「轟！」
+// 特別大的暴衝（超過一般的 25 倍）：再加一聲打雷
+let lastSpikeStep = -1;
+let spikeScale = 1;
+const whoosh = new Tone.Synth({ oscillator: { type: 'sine' },
+  envelope: { attack: 0.01, decay: 0.1, sustain: 0.8, release: 0.1 } }).toDestination();
+whoosh.volume.value = -8;
+const ding = new Tone.Synth({ oscillator: { type: 'triangle' },
+  envelope: { attack: 0.001, decay: 0.8, sustain: 0, release: 0.5 } }).toDestination();
+ding.volume.value = -6;
+const boom = new Tone.MembraneSynth({ pitchDecay: 0.3, octaves: 6,
+  envelope: { attack: 0.001, decay: 0.8, sustain: 0 } }).toDestination();
+boom.volume.value = 0;
+const thunder = new Tone.NoiseSynth({ noise: { type: 'brown' },
+  envelope: { attack: 0.01, decay: 1.8, sustain: 0 } }).toDestination();
+thunder.volume.value = -4;
+
+function playSpike(pips, time) {
+  const mega = Math.abs(pips) > 25 * spikeScale;
+  if (pips > 0) {
+    whoosh.triggerAttackRelease(300, 0.3, time);
+    whoosh.frequency.exponentialRampToValueAtTime(1800, time + 0.3);
+    ding.triggerAttackRelease('E7', '8n', time + 0.3);
+    if (mega) ding.triggerAttackRelease('B7', '8n', time + 0.45);
+  } else {
+    whoosh.triggerAttackRelease(1800, 0.45, time);
+    whoosh.frequency.exponentialRampToValueAtTime(200, time + 0.45);
+    boom.triggerAttackRelease('C1', '2n', time + 0.45);
+  }
+  if (mega) thunder.triggerAttackRelease('1n', time + 0.3);
+}
+
+// 在圖表上閃一下「⚡ +3.9 pips in one step」
+function showSpike(pips) {
+  if (hideAnswer) return;   // 猜漲跌遊戲中不顯示，只聽聲音
+  const flash = document.getElementById('spikeFlash');
+  const up = pips > 0;
+  const mega = Math.abs(pips) > 25 * spikeScale;
+  flash.textContent = (mega ? '🚨 MEGA ' : '⚡ ') + (up ? 'SPIKE UP +' : 'CRASH ') + pips.toFixed(1) + ' pips!';
+  flash.style.background = up ? '#f5c542' : '#ff4d4f';
+  flash.style.color = up ? '#3a2e00' : '#ffffff';
+  flash.classList.add('show');
+  setTimeout(() => flash.classList.remove('show'), 700);
+}
 
 // ---------- 6. 播放：每個 16 分音符執行一次（一小節 = 16 次） ----------
 let step = 0;          // 播到第幾筆資料
@@ -457,6 +518,14 @@ function onTick(time) {
     }
   }
 
+  // 暴衝音效：每一個暴衝只在第一次播到時響一次
+  if (spikes[step] && step !== lastSpikeStep) {
+    lastSpikeStep = step;
+    playSpike(spikes[step], time);
+    const pips = spikes[step];
+    Tone.Draw.schedule(() => showSpike(pips), time);
+  }
+
   // 波動很大時，不管什麼情緒都加上急促的鈸聲
   if ((wind > 0.45 && tick % 2 === 0) || wind > 0.75) hat.triggerAttackRelease('32n', time);
 
@@ -513,6 +582,7 @@ async function play() {
   if (step >= prices.length) step = 0;
   tick = 0;
   finishing = false;
+  lastSpikeStep = -1;
   Tone.Transport.bpm.value = 76;
   loopId = Tone.Transport.scheduleRepeat(onTick, '16n');
   Tone.Transport.start();

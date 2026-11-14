@@ -106,6 +106,12 @@ function surviveStep(i) {
   lastIndex = i;
   peakMoney = Math.max(peakMoney, money);
 
+  // 暴衝：畫面上跳出大字
+  if (spikes[i]) {
+    popups.push({ text: (spikes[i] > 0 ? '⚡ SPIKE UP!' : '💥 CRASH!'),
+                  color: spikes[i] > 0 ? '#f5c542' : '#ff4d4f', y: -30, life: 1.4 });
+  }
+
   // 播報員：情緒改變、暴衝、大賺的時候講話
   const pips = (prices[i] - prices[Math.max(0, i - 10)]) * 10000;
   const facts = { time: times[i], price: prices[i].toFixed(5), last10MinutesPips: Math.round(pips),
