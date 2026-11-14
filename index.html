@@ -40,6 +40,7 @@
   <div class="controls">
     <button id="playBtn">▶ Play</button>
     <button id="stopBtn" disabled>■ Stop</button>
+    <button id="restartBtn">↺ Restart</button>
     <select id="datasetSelect"></select>
     <select id="viewSelect">
       <option value="storm">Zoom: biggest storm</option>
@@ -50,6 +51,7 @@
       <option value="2" selected>Speed: slow</option>
       <option value="1">Speed: fast</option>
     </select>
+    <label>Volume <input id="volume" type="range" min="-30" max="6" value="0"></label>
     <label>Load CSV <input id="fileInput" type="file" accept=".csv"></label>
   </div>
 
@@ -235,10 +237,13 @@ function analyse() {
 }
 
 // ---------- 3. 畫圖 ----------
+const MOOD_COLORS = { heaven: '#f5c542', horror: '#ff4d4f', calm: '#8a93a6' };
 const chart = new Chart(document.getElementById('chart'), {
   type: 'line',
   data: { labels: [], datasets: [
-    { data: [], borderColor: '#4f8cff', pointRadius: 0, borderWidth: 2 },
+    // 價格線：每一段依照情緒上色（天堂 = 金色、恐怖 = 紅色、平穩 = 灰藍色）
+    { data: [], borderColor: '#8a93a6', pointRadius: 0, borderWidth: 2.5,
+      segment: { borderColor: ctx => MOOD_COLORS[moods[ctx.p0DataIndex]] || '#8a93a6' } },
     { data: [], borderColor: '#ff7a45', backgroundColor: '#ff7a45', pointRadius: 6, showLine: false }
   ]},
   options: { animation: false, plugins: { legend: { display: false } },
@@ -434,6 +439,12 @@ function stop() {
 
 document.getElementById('playBtn').addEventListener('click', play);
 document.getElementById('stopBtn').addEventListener('click', stop);
+// 從頭開始播
+document.getElementById('restartBtn').addEventListener('click', () => { stop(); step = 0; play(); });
+// 音量（單位是分貝，0 = 原本的音量）
+document.getElementById('volume').addEventListener('input', e => {
+  Tone.Destination.volume.value = Number(e.target.value);
+});
 
 document.getElementById('fileInput').addEventListener('change', async (event) => {
   const file = event.target.files[0];
