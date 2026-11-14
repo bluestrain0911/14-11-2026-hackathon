@@ -321,8 +321,8 @@
     </div>
     <div class="chart-wrap"><canvas id="chart" height="120"></canvas></div>
     <!-- 暴衝時閃一下的提示 -->
-    <div id="spikeFlash" class="spike"></div>
-    <div id="stormBanner" class="hidden" style="position:absolute; left:12px; bottom:12px; padding:6px 12px; border-radius:8px; font-weight:700; font-size:15px;"></div>
+    <div id="spikeFlash" class="spike" style="pointer-events:none"></div>
+    <div id="stormBanner" class="hidden" style="pointer-events:none; position:absolute; left:12px; bottom:12px; padding:6px 12px; border-radius:8px; font-weight:700; font-size:15px;"></div>
     <!-- 遊戲時蓋住圖表，只能用聽的 -->
     <div id="cover" class="cover hidden">Listen…<small>Is the market rising, flat or falling?</small></div>
   </div>
@@ -750,6 +750,31 @@ const chart = new Chart(document.getElementById('chart'), {
       } },
     scales: { x: { display: false }, y: { ticks: { color: '#8e9bb5', font: { family: 'Manrope' } }, grid: { color: '#1f2b47' } } } }
 });
+
+// 滑鼠指著圖表時，圖表每走一步都會重畫，重畫會把提示框清掉 → 看起來「有時候有、有時候沒有」。
+// 解法：記住滑鼠位置，每次重畫後自動把提示框放回去。
+let chartMouse = null;
+const chartCanvas = document.getElementById('chart');
+chartCanvas.addEventListener('mousemove', e => {
+  const r = chartCanvas.getBoundingClientRect();
+  chartMouse = { x: e.clientX - r.left, y: e.clientY - r.top };
+});
+chartCanvas.addEventListener('mouseleave', () => { chartMouse = null; });
+function restoreTooltip() {
+  if (!chartMouse || !chart.getElementsAtEventForMode || hideAnswer) return;
+  try {
+    const els = chart.getElementsAtEventForMode({ x: chartMouse.x, y: chartMouse.y, native: null },
+                                                'index', { intersect: false, axis: 'x' }, false)
+                     .filter(el => el.datasetIndex === 0);
+    chart.setActiveElements(els);
+    chart.tooltip.setActiveElements(els, chartMouse);
+    chart.draw();
+  } catch (e) { /* 提示框只是輔助，出錯就略過 */ }
+}
+if (chart.update) {
+  const originalUpdate = chart.update.bind(chart);
+  chart.update = (...args) => { const r = originalUpdate(...args); restoreTooltip(); return r; };
+}
 
 // 圖表的上下範圍至少要有 10 pip（0.0010）。
 // 不然市場很平靜時，圖表會自動放大，0.0002 的小晃動看起來像大起大落。
