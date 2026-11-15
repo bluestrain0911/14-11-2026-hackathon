@@ -90,12 +90,14 @@ async function showReport(stats) {
         'calm = flat). The game shows storm warnings when recent volatility is 2x or 3.5x normal. ' +
         'They could buy (long), sell (short) or hold cash, and use up to 3 "shields" (stop-loss at -$' +
         shieldLimit() + '). Each pip = $100, start balance $10,000.\n' +
-        'Here are the match stats as JSON: ' + JSON.stringify(stats) + '\n' +
-        'Write: first line exactly "Player rating: X/10" (X between 1 and 10, may use .5). Then exactly 3 short bullet ' +
-        'points starting with "- ": one thing they did well, one mistake (mention a specific time from the trade log ' +
-        'if possible), and one tip that teaches a real trading idea (stop-loss, following the trend, overtrading, ' +
-        'risk) linked to the music cues. Under 90 words total, fun but genuinely educational, no markdown bold.';
-      const text = await geminiGenerate(prompt);
+        // Send a short trade log only: a smaller prompt gets a faster reply
+        'Here are the match stats as JSON: ' + JSON.stringify(Object.assign({}, stats, { tradeLog: (stats.tradeLog || []).slice(0, 6) })) + '\n' +
+        'Write: first line exactly "Player rating: X/10" (X between 1 and 10, may use .5). Then exactly 2 bullet ' +
+        'points starting with "- ", each under 15 words: one mistake (mention a specific time if possible) and one ' +
+        'tip that teaches a real trading idea (stop-loss, following the trend, overtrading or risk). ' +
+        'Under 40 words total, plain text, no markdown bold.';
+      // Ask for a quick answer (little "thinking") and give up after 12 seconds, keeping the built-in tips
+      const text = await geminiGenerate(prompt, 12000, true);
       if (text) {
         const lines = text.trim().split('\n').filter(l => l.trim());
         coach.innerHTML = '<div style="color:#7ec8ff; margin-bottom:6px;">✨ Coach\'s analysis (Gemini)</div>' +
@@ -103,7 +105,7 @@ async function showReport(stats) {
         const first = lines[0] || '';
         const match = first.match(/(\d+(\.\d)?)\s*\/\s*10/);
         if (match) spoken = 'Player rating: ' + match[1] + ' out of ten. ' +
-          lines.slice(1, 4).map(l => l.replace(/^[-*•]\s*/, '')).join(' ');      // Read out all three tips
+          lines.slice(1, 3).map(l => l.replace(/^[-*•]\s*/, '')).join(' ');      // Read out both tips
       }
     } catch (e) {
       console.warn('Gemini report failed, keeping the built-in tips', e);

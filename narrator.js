@@ -251,7 +251,7 @@ async function findGeminiModel() {
   return models[0] || null;
 }
 
-async function geminiGenerate(prompt, timeoutMs = 25000) {
+async function geminiGenerate(prompt, timeoutMs = 25000, fast = false) {
   const model = setting('geminiModel') || 'gemini-flash-latest';
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model +
               ':generateContent?key=' + encodeURIComponent(setting('geminiKey'));
@@ -263,10 +263,15 @@ async function geminiGenerate(prompt, timeoutMs = 25000) {
     response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+      // fast = ask the model to "think" as little as possible, so short answers come back quickly
+      body: JSON.stringify(fast
+        ? { contents: [{ parts: [{ text: prompt }] }], generationConfig: { thinkingConfig: { thinkingLevel: 'minimal' } } }
+        : { contents: [{ parts: [{ text: prompt }] }] }),
       signal: abort.signal
     });
   } finally { clearTimeout(timer); }
+  // Older models don't understand the "thinking" setting: try once more without it
+  if (fast && response.status === 400) return geminiGenerate(prompt, timeoutMs, false);
   if ((response.status === 404 || response.status === 400) && !geminiModelFixTried) {
     geminiModelFixTried = true;
     const pick = await findGeminiModel();
@@ -274,7 +279,7 @@ async function geminiGenerate(prompt, timeoutMs = 25000) {
       saveSetting('geminiModel', pick);
       document.getElementById('geminiModel').value = pick;
       console.warn('Gemini model "' + model + '" not available, switched to', pick);
-      return geminiGenerate(prompt, timeoutMs);
+      return geminiGenerate(prompt, timeoutMs, fast);
     }
   }
   if (!response.ok) {
